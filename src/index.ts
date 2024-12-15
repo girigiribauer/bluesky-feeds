@@ -30,4 +30,7 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) =>
   })
 );
 
-serve(app);
+serve({
+  fetch: app.fetch,
+  port: parseInt(process.env.PORT ?? "", 10) ?? 3000,
+});
