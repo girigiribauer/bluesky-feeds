@@ -3,6 +3,12 @@ import { Hono } from "hono";
 
 const app = new Hono();
 
+app.get("/", (c) =>
+  c.text(
+    "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-feed-helloworld"
+  )
+);
+
 app.get("/.well-known/did.json", (c) =>
   c.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
