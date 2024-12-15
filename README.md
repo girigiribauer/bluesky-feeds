@@ -15,3 +15,11 @@ Bluesky のフィードを最小構成で作ってみます
 npm install
 npm run dev
 ```
+
+## 公開・取り消しする
+
+```
+npm run publish
+npm run unpublish
+```
+
