@@ -29,9 +29,6 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) =>
       {
         post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldcooerekc2y",
       },
-      {
-        post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldcooerekc2y",
-      },
     ],
   })
 );
