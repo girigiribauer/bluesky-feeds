@@ -27,5 +27,5 @@ import { AtpAgent } from "@atproto/api";
     },
   });
 
-  console.log("publish");
+  console.log("published");
 })();
