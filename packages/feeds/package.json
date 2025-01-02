@@ -2,7 +2,6 @@
   "name": "feeds",
   "version": "0.0.1",
   "description": "",
-  "type": "module",
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc",
