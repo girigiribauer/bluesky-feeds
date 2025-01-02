@@ -1,14 +1,7 @@
 {
+  "exclude": ["../../tsconfig.json"],
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "NodeNext",
     "outDir": "./dist",
-    "strict": true,
-    "verbatimModuleSyntax": true,
-    "skipLibCheck": true,
-    "types": [
-      "node"
-    ],
   },
   "include": [
     "src/**/*"

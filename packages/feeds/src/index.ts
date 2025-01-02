@@ -9,7 +9,22 @@ app.get("/", (c) =>
   )
 );
 
+app.get("/.well-known/did.json", (c) => {
+  return c.json({
+    "@context": ["https://www.w3.org/ns/did/v1"],
+    id: "did:web:feeds.bsky.girigiribauer.com",
+    service: [
+      {
+        id: "#bsky_fg",
+        type: "BskyFeedGenerator",
+        serviceEndpoint: "https://feeds.bsky.girigiribauer.com",
+      },
+    ],
+  });
+});
+
 app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) =>
+  // TODO: ここで feed パラメータを調べて個別フィードに振り分け
   c.json({
     feed: [
       {

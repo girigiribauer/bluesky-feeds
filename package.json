@@ -1,12 +1,15 @@
 {
   "name": "bluesky-feeds",
-  "private": true,
+  "version": "0.0.1",
+  "description": "",
   "type": "module",
+  "private": true,
+  "license": "MIT",
   "scripts": {
     "start": "npm -w packages/feeds start",
     "build": "npm -w packages/feeds run build",
     "dev": "npm -w packages/feeds run dev",
-    "publish": "npm run publish",
+    "publish": "npx tsx scripts/publishFeed.ts",
     "unpublish": "npm run unpublish"
   },
   "devDependencies": {
@@ -17,7 +20,6 @@
     "typescript": "^5.7.2"
   },
   "workspaces": [
-    "packages/did-helloworld",
-    "packages/feeds"
+    "packages/*"
   ]
 }
