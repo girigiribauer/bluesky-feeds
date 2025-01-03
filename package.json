@@ -7,9 +7,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "npm start -w packages/feeds",
-    "build": "npm run build -w packages/feeds",
-    "dev": "npm run dev -w packages/feeds",
+    "start": "npm start -w packages/feed-router",
+    "build": "npm run build -w packages/shared -w packages/helloworld -w packages/feed-router",
+    "dev": "npm run dev -w packages/feed-router",
     "publish": "npx tsx scripts/publishFeed.ts",
     "unpublish": "npm tsx scripts/unpublishFeed.ts"
   },

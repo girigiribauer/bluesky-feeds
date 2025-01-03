@@ -6,6 +6,9 @@
     "strict": true,
     "composite": true,
     "verbatimModuleSyntax": true,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "types": [
       "node"
