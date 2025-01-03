@@ -7,7 +7,6 @@
     "src/**/*"
   ],
   "references": [
-    { "path": "../shared" },
-    { "path": "../helloworld" }
+    { "path": "../shared" }
   ]
 }

@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "module": "NodeNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
     "strict": true,
+    "composite": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "types": [

@@ -1,5 +1,8 @@
+import { AtUri } from "@atproto/syntax";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { posts as helloworldPosts } from "helloworld";
+import { isFeedService } from "shared";
 
 const app = new Hono();
 
@@ -23,16 +26,25 @@ app.get("/.well-known/did.json", (c) => {
   });
 });
 
-app.get("/xrpc/app.bsky.feed.getFeedSkeleton", (c) =>
-  // TODO: ここで feed パラメータを調べて個別フィードに振り分け
-  c.json({
-    feed: [
-      {
-        post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldcooerekc2y",
-      },
-    ],
-  })
-);
+app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
+  const feed = c.req.query("feed");
+  if (!feed) {
+    throw "Feed query param is missing";
+  }
+
+  const uri: AtUri = new AtUri(feed);
+  const feedService = uri.rkey;
+  if (!isFeedService(feedService)) {
+    throw "Feed service name is wrong";
+  }
+
+  switch (feedService) {
+    case "helloworld":
+      return c.json(await helloworldPosts());
+    case "todoapp":
+      return c.json(await helloworldPosts());
+  }
+});
 
 serve({
   fetch: app.fetch,

@@ -2,15 +2,16 @@
   "name": "bluesky-feeds",
   "version": "0.0.1",
   "description": "",
+  "author": "girigiribauer",
+  "license": "MIT",
   "type": "module",
   "private": true,
-  "license": "MIT",
   "scripts": {
-    "start": "npm -w packages/feeds start",
-    "build": "npm -w packages/feeds run build",
-    "dev": "npm -w packages/feeds run dev",
+    "start": "npm start -w packages/feeds",
+    "build": "npm run build -w packages/feeds",
+    "dev": "npm run dev -w packages/feeds",
     "publish": "npx tsx scripts/publishFeed.ts",
-    "unpublish": "npm run unpublish"
+    "unpublish": "npm tsx scripts/unpublishFeed.ts"
   },
   "devDependencies": {
     "@atproto/api": "^0.13.20",

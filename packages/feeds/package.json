@@ -2,14 +2,16 @@
   "name": "feeds",
   "version": "0.0.1",
   "description": "",
+  "author": "girigiribauer",
+  "license": "MIT",
+  "type": "module",
   "scripts": {
     "start": "node dist/index.js",
     "build": "tsc",
     "dev": "tsx watch src/index.ts"
   },
-  "author": "",
-  "license": "ISC",
   "dependencies": {
+    "@atproto/syntax": "^0.3.1",
     "@hono/node-server": "^1.13.7",
     "hono": "^4.6.15"
   }

@@ -1,0 +1,14 @@
+{
+  "name": "shared",
+  "version": "0.0.1",
+  "description": "",
+  "author": "girigiribauer",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "echo TODO"
+  }
+}

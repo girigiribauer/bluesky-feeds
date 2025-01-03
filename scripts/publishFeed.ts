@@ -1,20 +1,18 @@
 import dotenv from "dotenv";
 import { AtpAgent } from "@atproto/api";
-
-const Feeds = ["helloworld", "todoapp"] as const;
-type FeedType = (typeof Feeds)[number];
+import { AvailableFeedServices, isFeedService, type FeedService } from "shared";
 
 type BlueskyConfig = {
   handle: string;
   password: string;
-  feedName: FeedType;
+  feedService: FeedService;
 };
 
-const isFeedType = (name: string): name is FeedType => {
-  return Feeds.includes(name as FeedType);
-};
-
-const publishFeed = async ({ handle, password, feedName }: BlueskyConfig) => {
+const publishFeed = async ({
+  handle,
+  password,
+  feedService,
+}: BlueskyConfig) => {
   const agent = new AtpAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });
 
@@ -23,16 +21,16 @@ const publishFeed = async ({ handle, password, feedName }: BlueskyConfig) => {
   await agent.com.atproto.repo.putRecord({
     repo: agent.session?.did ?? "",
     collection: "app.bsky.feed.generator",
-    rkey: feedName,
+    rkey: feedService.service,
     record: {
       did: "did:web:feeds.bsky.girigiribauer.com",
-      displayName: "helloworld feed",
-      description: "hello!",
+      displayName: feedService.displayName,
+      description: feedService.description,
       createdAt: new Date().toISOString(),
     },
   });
 
-  console.log("published");
+  console.log(`published ${feedService.service}`);
 };
 
 (async () => {
@@ -44,11 +42,17 @@ const publishFeed = async ({ handle, password, feedName }: BlueskyConfig) => {
     return;
   }
 
-  if (process.argv.length <= 2 || !isFeedType(process.argv[2])) {
-    console.error("FeedName argument is missing.");
+  if (process.argv.length <= 2 || !isFeedService(process.argv[2])) {
+    console.error("FeedService argument is missing.");
     return;
   }
-  const feedName = process.argv[2];
 
-  publishFeed({ handle, password, feedName });
+  const service = process.argv[2];
+  const feedService = AvailableFeedServices.find((a) => a.service === service);
+  if (!feedService) {
+    console.error("FeedService definition is missing.");
+    return;
+  }
+
+  publishFeed({ handle, password, feedService });
 })();
