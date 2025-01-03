@@ -63,7 +63,7 @@ const getTodo = async (did: string): Promise<string[]> => {
 };
 
 export const posts = async (c: Context): Promise<FeedSkeletonResult> => {
-  const did = await validateAuth(c, "did:web:todoapp.bsky.girigiribauer.com");
+  const did = await validateAuth(c, "did:web:feeds.bsky.girigiribauer.com");
   const todoPosts = await getTodo(did);
 
   return {
