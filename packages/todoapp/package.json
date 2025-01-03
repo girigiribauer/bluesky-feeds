@@ -1,5 +1,5 @@
 {
-  "name": "shared",
+  "name": "todoapp",
   "version": "0.0.1",
   "description": "",
   "author": "girigiribauer",
@@ -10,10 +10,5 @@
   "scripts": {
     "build": "tsc",
     "test": "echo TODO"
-  },
-  "dependencies": {
-    "@atproto/identity": "^0.4.3",
-    "@atproto/xrpc-server": "^0.7.4",
-    "hono": "^4.6.15"
   }
 }

@@ -1,11 +1,24 @@
 import dotenv from "dotenv";
-import { AtpAgent } from "@atproto/api";
+import fs from "fs/promises";
+import { AtpAgent, BlobRef } from "@atproto/api";
 import { AvailableFeedServices, isFeedService, type FeedService } from "shared";
 
 type BlueskyConfig = {
   handle: string;
   password: string;
   feedService: FeedService;
+};
+
+const uploadAvatar = async (
+  agent: AtpAgent,
+  path: string
+): Promise<BlobRef> => {
+  const image = await fs.readFile(path);
+  const blobResponse = await agent.com.atproto.repo.uploadBlob(image, {
+    encoding: "image/png",
+  });
+
+  return blobResponse.data.blob;
 };
 
 const publishFeed = async ({
@@ -18,6 +31,15 @@ const publishFeed = async ({
 
   console.log(`login by ${handle}`);
 
+  const avatar: BlobRef | undefined = await (async () => {
+    if (feedService.avatar) {
+      return await uploadAvatar(agent, feedService.avatar).catch(
+        () => undefined
+      );
+    }
+    return;
+  })();
+
   await agent.com.atproto.repo.putRecord({
     repo: agent.session?.did ?? "",
     collection: "app.bsky.feed.generator",
@@ -26,6 +48,7 @@ const publishFeed = async ({
       did: "did:web:feeds.bsky.girigiribauer.com",
       displayName: feedService.displayName,
       description: feedService.description,
+      avatar,
       createdAt: new Date().toISOString(),
     },
   });

@@ -1,4 +1,4 @@
-# helloworld feed
+# Helloworld feed
 
 Bluesky のフィードを最小構成で作ってみます
 
@@ -9,9 +9,6 @@ Bluesky のフィードを最小構成で作ってみます
 
 ## 手元で動かす
 
-```
-npm install
-npm run dev
-```
+root で実行
 
 see http://localhost:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:xxx/app.bsky.feed.generator/helloworld

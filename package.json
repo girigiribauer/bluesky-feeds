@@ -8,7 +8,7 @@
   "private": true,
   "scripts": {
     "start": "npm start -w packages/feed-router",
-    "build": "npm run build -w packages/shared -w packages/helloworld -w packages/feed-router",
+    "build": "npm run build -ws",
     "dev": "npm run dev -w packages/feed-router",
     "publish": "npx tsx scripts/publishFeed.ts",
     "unpublish": "npm tsx scripts/unpublishFeed.ts"
@@ -21,6 +21,9 @@
     "typescript": "^5.7.2"
   },
   "workspaces": [
-    "packages/*"
+    "packages/shared",
+    "packages/helloworld",
+    "packages/todoapp",
+    "packages/feed-router"
   ]
 }

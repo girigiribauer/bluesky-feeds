@@ -9,8 +9,6 @@
   ],
   "exclude": ["node_modules", "dist"],
   "references": [
-    { "path": "../shared" },
-    { "path": "../todoapp" },
-    { "path": "../helloworld" }
+    { "path": "../shared" }
   ]
 }

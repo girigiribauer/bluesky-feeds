@@ -2,6 +2,7 @@ import { AtUri } from "@atproto/syntax";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { posts as helloworldPosts } from "helloworld";
+import { posts as todoappPosts } from "todoapp";
 import { isFeedService } from "shared";
 
 const app = new Hono();
@@ -42,7 +43,7 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     case "helloworld":
       return c.json(await helloworldPosts());
     case "todoapp":
-      return c.json(await helloworldPosts());
+      return c.json(await todoappPosts(c));
   }
 });
 
