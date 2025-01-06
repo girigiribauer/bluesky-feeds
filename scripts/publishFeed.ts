@@ -1,7 +1,12 @@
 import dotenv from "dotenv";
 import fs from "fs/promises";
 import { AtpAgent, BlobRef } from "@atproto/api";
-import { AvailableFeedServices, isFeedService, type FeedService } from "shared";
+import {
+  AVAILABLE_FEED_SERVICES,
+  isFeedService,
+  SERVICE_DID,
+  type FeedService,
+} from "shared";
 
 type BlueskyConfig = {
   handle: string;
@@ -45,7 +50,7 @@ const publishFeed = async ({
     collection: "app.bsky.feed.generator",
     rkey: feedService.service,
     record: {
-      did: "did:web:feeds.bsky.girigiribauer.com",
+      did: SERVICE_DID,
       displayName: feedService.displayName,
       description: feedService.description,
       avatar,
@@ -71,7 +76,9 @@ const publishFeed = async ({
   }
 
   const service = process.argv[2];
-  const feedService = AvailableFeedServices.find((a) => a.service === service);
+  const feedService = AVAILABLE_FEED_SERVICES.find(
+    (a) => a.service === service
+  );
   if (!feedService) {
     console.error("FeedService definition is missing.");
     return;

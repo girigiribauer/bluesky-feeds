@@ -4,10 +4,8 @@ import {
   type PostView,
 } from "@atproto/api/dist/client/types/app/bsky/feed/defs.js";
 import type { Record } from "@atproto/api/dist/client/types/app/bsky/feed/post.js";
-import type { Context } from "hono";
-import { validateAuth, type FeedSkeletonResult } from "shared";
+import { type FeedSkeletonResult } from "shared";
 
-// TODO: テスト書く
 const getTodo = async (did: string): Promise<string[]> => {
   const startTrigger = "TODO";
   const replyTrigger = "DONE";
@@ -21,6 +19,7 @@ const getTodo = async (did: string): Promise<string[]> => {
     author: did,
     limit: 100,
   });
+
   if (!searchResponse.success) {
     return [];
   }
@@ -62,8 +61,7 @@ const getTodo = async (did: string): Promise<string[]> => {
   return filtered.map((a) => a.uri);
 };
 
-export const posts = async (c: Context): Promise<FeedSkeletonResult> => {
-  const did = await validateAuth(c, "did:web:feeds.bsky.girigiribauer.com");
+export const posts = async (did: string): Promise<FeedSkeletonResult> => {
   const todoPosts = await getTodo(did);
 
   return {

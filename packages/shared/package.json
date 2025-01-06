@@ -8,8 +8,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "test": "echo TODO"
+    "build": "tsc"
   },
   "dependencies": {
     "@atproto/identity": "^0.4.3",

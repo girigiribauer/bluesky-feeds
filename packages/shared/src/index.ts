@@ -1,10 +1,9 @@
 import { AuthRequiredError, verifyJwt } from "@atproto/xrpc-server";
 import { DidResolver, MemoryCache } from "@atproto/identity";
-import type { Context } from "hono";
+import type { HonoRequest } from "hono";
 import { parseUrlNsid } from "@atproto/xrpc-server/dist/util.js";
 
-export const FeedServices = ["helloworld", "todoapp"] as const;
-export type FeedServiceType = (typeof FeedServices)[number];
+export type FeedServiceType = (typeof FEED_SERVICES)[number];
 
 export type FeedService = {
   service: FeedServiceType;
@@ -13,7 +12,19 @@ export type FeedService = {
   avatar?: string;
 };
 
-export const AvailableFeedServices: FeedService[] = [
+export type FeedSkeletonResult = {
+  cursor?: string;
+  feed: {
+    post: string;
+  }[];
+};
+
+export const SERVICE_DID = "did:web:feeds.bsky.girigiribauer.com" as const;
+
+export const FEED_SERVICES = ["helloworld", "todoapp"] as const;
+
+// TODO: もしかしたら各ワークスペース側に移した方が良さげ？
+export const AVAILABLE_FEED_SERVICES: FeedService[] = [
   {
     service: "helloworld",
     displayName: "Helloworld feed",
@@ -29,22 +40,13 @@ export const AvailableFeedServices: FeedService[] = [
 ];
 
 export const isFeedService = (name: string): name is FeedServiceType => {
-  return FeedServices.includes(name as FeedServiceType);
+  return FEED_SERVICES.includes(name as FeedServiceType);
 };
 
-export type FeedSkeletonResult = {
-  cursor?: string;
-  feed: {
-    post: string;
-  }[];
-};
-
-// TODO: リファクタ
-export const validateAuth = async (
-  c: Context,
-  serviceDid: string
+export const validateAuthHonoRequest = async (
+  honoRequest: HonoRequest
 ): Promise<string> => {
-  const authorization = c.req.header("Authorization") ?? "";
+  const authorization = honoRequest.header("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
     throw new AuthRequiredError();
   }
@@ -56,11 +58,15 @@ export const validateAuth = async (
   });
 
   const jwt = authorization.replace("Bearer ", "").trim();
-  const nsid = parseUrlNsid(c.req.path);
-
-  const parsed = await verifyJwt(jwt, serviceDid, nsid, async (did: string) => {
-    return didResolver.resolveAtprotoKey(did);
-  });
+  const nsid = parseUrlNsid(honoRequest.path);
+  const parsed = await verifyJwt(
+    jwt,
+    SERVICE_DID,
+    nsid,
+    async (did: string) => {
+      return didResolver.resolveAtprotoKey(did);
+    }
+  );
 
   return parsed.iss;
 };

@@ -9,6 +9,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "echo TODO"
+    "test": "vitest --run",
+    "test:watch": "vitest"
   }
 }

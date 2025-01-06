@@ -9,6 +9,7 @@
   "scripts": {
     "start": "npm start -w packages/feed-router",
     "build": "npm run build -ws",
+    "test": "npm run test -ws --if-present",
     "dev": "npm run dev -w packages/feed-router",
     "publish": "npx tsx scripts/publishFeed.ts",
     "unpublish": "npm tsx scripts/unpublishFeed.ts"
@@ -17,8 +18,10 @@
     "@atproto/api": "^0.13.20",
     "@types/node": "^20.11.17",
     "dotenv": "^16.4.7",
+    "msw": "^2.7.0",
     "tsx": "^4.7.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   },
   "workspaces": [
     "packages/shared",
