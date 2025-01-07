@@ -13,6 +13,10 @@
   "dependencies": {
     "@atproto/syntax": "^0.3.1",
     "@hono/node-server": "^1.13.7",
-    "hono": "^4.6.15"
+    "helloworld": "^0.0.1",
+    "hono": "^4.6.15",
+    "oneyearago": "^0.0.1",
+    "shared": "^0.0.1",
+    "todoapp": "^0.0.1"
   }
 }

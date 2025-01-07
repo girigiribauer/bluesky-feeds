@@ -21,7 +21,7 @@ export type FeedSkeletonResult = {
 
 export const SERVICE_DID = "did:web:feeds.bsky.girigiribauer.com" as const;
 
-export const FEED_SERVICES = ["helloworld", "todoapp"] as const;
+export const FEED_SERVICES = ["helloworld", "todoapp", "oneyearago"] as const;
 
 // TODO: もしかしたら各ワークスペース側に移した方が良さげ？
 export const AVAILABLE_FEED_SERVICES: FeedService[] = [
@@ -36,6 +36,12 @@ export const AVAILABLE_FEED_SERVICES: FeedService[] = [
     description:
       "Only your posts starting with `TODO` are displayed. Replying with `DONE` will remove them.\n`TODO` と頭につけた自分の投稿だけが表示されます。 `DONE` と返信すると消えます。",
     avatar: "assets/todoapp.png",
+  },
+  {
+    service: "oneyearago",
+    displayName: "OneYearAgo feed",
+    description: "ちょうど1年前の自分のポストが表示されます",
+    avatar: "assets/oneyearago.png",
   },
 ];
 

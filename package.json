@@ -27,6 +27,10 @@
     "packages/shared",
     "packages/helloworld",
     "packages/todoapp",
+    "packages/oneyearago",
     "packages/feed-router"
-  ]
+  ],
+  "volta": {
+    "node": "22.12.0"
+  }
 }

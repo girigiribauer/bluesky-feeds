@@ -3,7 +3,8 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { posts as helloworldPosts } from "helloworld";
 import { posts as todoappPosts } from "todoapp";
-import { isFeedService, SERVICE_DID, validateAuthHonoRequest } from "shared";
+import { posts as oneyearagoPosts } from "oneyearago";
+import { isFeedService, validateAuthHonoRequest } from "shared";
 
 const app = new Hono();
 
@@ -16,7 +17,7 @@ app.get("/", (c) =>
 app.get("/.well-known/did.json", (c) => {
   return c.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
-    id: SERVICE_DID,
+    id: "did:web:feeds.bsky.girigiribauer.com",
     service: [
       {
         id: "#bsky_fg",
@@ -39,12 +40,17 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     throw "Feed service name is mismatch";
   }
 
+  let did: string;
   switch (feedService) {
     case "helloworld":
       return c.json(await helloworldPosts());
     case "todoapp":
-      const did = await validateAuthHonoRequest(c.req);
+      did = await validateAuthHonoRequest(c.req);
       return c.json(await todoappPosts(did));
+    case "oneyearago":
+      // did = await validateAuthHonoRequest(c.req);
+      did = "did:plc:tsvcmd72oxp47wtixs4qllyi";
+      return c.json(await oneyearagoPosts(did));
   }
 });
 
