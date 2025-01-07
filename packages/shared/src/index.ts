@@ -40,7 +40,7 @@ export const AVAILABLE_FEED_SERVICES: FeedService[] = [
   {
     service: "oneyearago",
     displayName: "OneYearAgo feed",
-    description: "ちょうど1年前の自分のポストが表示されます",
+    description: "ちょうど1年前の自分のポストが表示されます（テスト中）",
     avatar: "assets/oneyearago.png",
   },
 ];

@@ -48,8 +48,7 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
       did = await validateAuthHonoRequest(c.req);
       return c.json(await todoappPosts(did));
     case "oneyearago":
-      // did = await validateAuthHonoRequest(c.req);
-      did = "did:plc:tsvcmd72oxp47wtixs4qllyi";
+      did = await validateAuthHonoRequest(c.req);
       return c.json(await oneyearagoPosts(did));
   }
 });
