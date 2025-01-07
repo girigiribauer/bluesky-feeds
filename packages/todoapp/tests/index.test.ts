@@ -1,8 +1,7 @@
 import { setupServer, SetupServerApi } from "msw/node";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { posts } from "../src/index";
 import { http, HttpResponse } from "msw";
-import { afterEach } from "node:test";
 
 type handlerResponseType =
   | "zero"
@@ -146,7 +145,7 @@ const handlers = [
   ),
 ];
 
-describe("posts", async () => {
+describe("posts", () => {
   let server: SetupServerApi;
 
   beforeAll(async () => {

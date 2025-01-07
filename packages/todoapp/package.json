@@ -11,5 +11,8 @@
     "build": "tsc",
     "test": "vitest --run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@atproto/api": "^0.13.25"
   }
 }
