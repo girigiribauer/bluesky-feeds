@@ -40,8 +40,8 @@ export const getOneYearAgoRangeWithTZ = (date: Date): DateTimeRange => {
   const dayOfMonth = `${date.getDate()}`.padStart(2, "0");
   const timeString = date.toISOString().split("T")[1];
   const oneYearAgo = new Date(`${year}-${month}-${dayOfMonth}T${timeString}`);
-  const since = new Date(oneYearAgo.valueOf() - 12 * 60 * 60 * 1000);
-  const until = new Date(since.valueOf() + 24 * 60 * 60 * 1000);
+  const since = new Date(oneYearAgo.valueOf() - 24 * 60 * 60 * 1000);
+  const until = new Date(oneYearAgo.valueOf());
 
   return {
     since,
