@@ -45,7 +45,8 @@ const publishFeed = async ({
     return;
   })();
 
-  await agent.com.atproto.repo.putRecord({
+  console.log(JSON.stringify(feedService, null, 2));
+  const result = await agent.com.atproto.repo.putRecord({
     repo: agent.session?.did ?? "",
     collection: "app.bsky.feed.generator",
     rkey: feedService.service,
@@ -57,8 +58,7 @@ const publishFeed = async ({
       createdAt: new Date().toISOString(),
     },
   });
-
-  console.log(`published ${feedService.service}`);
+  console.log(result);
 };
 
 (async () => {
@@ -84,5 +84,7 @@ const publishFeed = async ({
     return;
   }
 
-  publishFeed({ handle, password, feedService });
+  await publishFeed({ handle, password, feedService });
+
+  console.log(`published ${feedService.service}`);
 })();
