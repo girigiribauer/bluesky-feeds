@@ -2,7 +2,7 @@ import { AtpAgent } from "@atproto/api";
 import type { Record } from "@atproto/api/dist/client/types/app/bsky/feed/post.js";
 import { type FeedSkeletonResult } from "shared";
 
-type TodayRange = {
+type DateTimeRange = {
   since: Date;
   until: Date;
 };
@@ -12,10 +12,33 @@ type PostAccumulator = {
   posts: string[];
 };
 
-export const getOneYearAgoRangeWithTZ = (date: Date): TodayRange => {
-  // TODO: とりあえず正しい実装はあとでやる、今はざっくり1年前の1日分を出す
-  // TODO: テスト書く
-  const since = new Date(date.valueOf() - 365 * 24 * 60 * 60 * 1000);
+/**
+ * 任意の日付を受け取り、1年前（閏年だった場合は2/28）の投稿を表示する
+ * @param date 任意の日付
+ * @returns
+ */
+export const getOneYearAgoRangeWithTZ = (date: Date): DateTimeRange => {
+  const isLeapYear = (year: number) => {
+    return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  };
+
+  const utcZeroTime = ((date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const dayOfMonth = date.getDate();
+    if (isLeapYear(year) && month == 2 && dayOfMonth == 29) {
+      return new Date(`${year - 1}-02-28T00:00:00.000Z`);
+    }
+    const monthString = `${month}`.padStart(2, "0");
+    const dayOfMonthString = `${dayOfMonth}`.padStart(2, "0");
+
+    return new Date(
+      `${year - 1}-${monthString}-${dayOfMonthString}T00:00:00.000Z`
+    );
+  })(date);
+
+  const offset = date.getTimezoneOffset() * 60 * 1000;
+  const since = new Date(utcZeroTime.valueOf() + offset);
   const until = new Date(since.valueOf() + 24 * 60 * 60 * 1000);
 
   return {
@@ -27,10 +50,13 @@ export const getOneYearAgoRangeWithTZ = (date: Date): TodayRange => {
 const getOneDayPosts = async (
   agent: AtpAgent,
   did: string,
-  range: TodayRange,
+  range: DateTimeRange,
   acc: PostAccumulator = { posts: [] }
 ): Promise<string[]> => {
-  const cursor = acc.cursor ? acc.cursor : range.since.toISOString();
+  console.log(
+    `getOneDayPosts since ${range.since.toISOString()} until ${range.until.toISOString()}`
+  );
+  const cursor = acc.cursor ? acc.cursor : range.until.toISOString();
   const searchResponse = await agent.app.bsky.feed.getAuthorFeed({
     actor: did,
     cursor,
@@ -42,18 +68,18 @@ const getOneDayPosts = async (
     return [];
   }
 
-  const posts = searchResponse.data.feed
-    .filter((a) => {
-      if (a.post.author.did !== did) {
-        return false;
-      }
+  const posts = searchResponse.data.feed.filter((a) => {
+    if (a.post.author.did !== did) {
+      return false;
+    }
 
-      const record = a.post.record as Record;
-      return new Date(record.createdAt).valueOf() <= range.until.valueOf();
-    })
-    .map((a) => a.post.uri);
+    const record = a.post.record as Record;
+    return range.since.valueOf() <= new Date(record.createdAt).valueOf();
+  });
+  console.log(posts.map((a) => (a.post.record as Record).createdAt));
+  console.log(posts.length);
 
-  acc.posts = acc.posts.concat(posts);
+  acc.posts = acc.posts.concat(posts.map((a) => a.post.uri));
   if (
     searchResponse.data.cursor &&
     range.until.valueOf() <= new Date(searchResponse.data.cursor).valueOf()
