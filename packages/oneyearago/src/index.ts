@@ -18,27 +18,29 @@ type PostAccumulator = {
  * @returns
  */
 export const getOneYearAgoRangeWithTZ = (date: Date): DateTimeRange => {
-  const isLeapYear = (year: number) => {
-    return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  };
+  // const isLeapYear = (year: number) => {
+  //   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  // };
 
-  const utcZeroTime = ((date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const dayOfMonth = date.getDate();
-    if (isLeapYear(year) && month == 2 && dayOfMonth == 29) {
-      return new Date(`${year - 1}-02-28T00:00:00.000Z`);
-    }
-    const monthString = `${month}`.padStart(2, "0");
-    const dayOfMonthString = `${dayOfMonth}`.padStart(2, "0");
+  // const utcZeroTime = ((date: Date) => {
+  //   if (isLeapYear(year) && month == 2 && dayOfMonth == 29) {
+  //     return new Date(`${year - 1}-02-28T00:00:00.000Z`);
+  //   }
+  //   const monthString = `${month}`.padStart(2, "0");
+  //   const dayOfMonthString = `${dayOfMonth}`.padStart(2, "0");
 
-    return new Date(
-      `${year - 1}-${monthString}-${dayOfMonthString}T00:00:00.000Z`
-    );
-  })(date);
+  //   return new Date(
+  //     `${year - 1}-${monthString}-${dayOfMonthString}T00:00:00.000Z`
+  //   );
+  // })(date);
 
-  const offset = date.getTimezoneOffset() * 60 * 1000;
-  const since = new Date(utcZeroTime.valueOf() + offset);
+  // const offset = date.getTimezoneOffset() * 60 * 1000;
+  const year = String(date.getFullYear() - 1);
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const dayOfMonth = `${date.getDate()}`.padStart(2, "0");
+  const timeString = date.toISOString().split("T")[1];
+  const oneYearAgo = new Date(`${year}-${month}-${dayOfMonth}T${timeString}`);
+  const since = new Date(oneYearAgo.valueOf() - 12 * 60 * 60 * 1000);
   const until = new Date(since.valueOf() + 24 * 60 * 60 * 1000);
 
   return {
@@ -53,9 +55,6 @@ const getOneDayPosts = async (
   range: DateTimeRange,
   acc: PostAccumulator = { posts: [] }
 ): Promise<string[]> => {
-  console.log(
-    `getOneDayPosts since ${range.since.toISOString()} until ${range.until.toISOString()}`
-  );
   const cursor = acc.cursor ? acc.cursor : range.until.toISOString();
   const searchResponse = await agent.app.bsky.feed.getAuthorFeed({
     actor: did,
@@ -76,8 +75,6 @@ const getOneDayPosts = async (
     const record = a.post.record as Record;
     return range.since.valueOf() <= new Date(record.createdAt).valueOf();
   });
-  console.log(posts.map((a) => (a.post.record as Record).createdAt));
-  console.log(posts.length);
 
   acc.posts = acc.posts.concat(posts.map((a) => a.post.uri));
   if (

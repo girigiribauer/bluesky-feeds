@@ -34,13 +34,14 @@ export const AVAILABLE_FEED_SERVICES: FeedService[] = [
     service: "todoapp",
     displayName: "TODO feed",
     description:
-      "Only your posts starting with `TODO` are displayed. Replying with `DONE` will remove them.\n`TODO` と頭につけた自分の投稿だけが表示されます。 `DONE` と返信すると消えます。",
+      "Only your posts starting with `TODO` are displayed. Replying with `DONE` will remove them.\n\n`TODO` と頭につけた自分の投稿だけが表示されます。 `DONE` と返信すると消えます。",
     avatar: "assets/todoapp.png",
   },
   {
     service: "oneyearago",
     displayName: "OneYearAgo feed",
-    description: "ちょうど1年前の自分のポストが表示されます（テスト中）",
+    description:
+      "Posts from exactly one year ago (±24 hours) are displayed.\n\nちょうど1年前の自分の投稿が表示されます（前後24時間）",
     avatar: "assets/oneyearago.png",
   },
 ];

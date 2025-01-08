@@ -50,28 +50,28 @@ const handlers = [
 ];
 
 describe("getOneYearAgoRangeWithTZ", () => {
-  it("UTC 1/2 00:00:00 (JST 1/2 09:00:00) だと UTC 1/1 15:00:00 (JST 1/2 00:00:00) から UTC 1/2 15:00:00 (JST 1/3 00:00:00) を返す", () => {
+  it("UTC 1/2 00:00:00 (JST 1/2 09:00:00) だと UTC 1/1 12:00:00 (JST 1/1 21:00:00) から UTC 1/2 12:00:00 (JST 1/2 21:00:00) を返す", () => {
     const result = getOneYearAgoRangeWithTZ(
       new Date("2025-01-02T00:00:00.000Z")
     );
-    expect(result.since).toEqual(new Date("2024-01-01T15:00:00.000Z"));
-    expect(result.until).toEqual(new Date("2024-01-02T15:00:00.000Z"));
+    expect(result.since).toEqual(new Date("2024-01-01T12:00:00.000Z"));
+    expect(result.until).toEqual(new Date("2024-01-02T12:00:00.000Z"));
   });
 
-  it("UTC 1/1 15:00:00 (JST 1/2 00:00:00) だと UTC 1/1 15:00:00 (JST 1/2 00:00:00) から UTC 1/2 15:00:00 (JST 1/3 00:00:00) を返す", () => {
+  it("UTC 1/2 03:00:00 (JST 1/2 12:00:00) だと UTC 1/1 15:00:00 (JST 1/2 00:00:00) から UTC 1/2 15:00:00 (JST 1/3 00:00:00) を返す", () => {
     const result = getOneYearAgoRangeWithTZ(
-      new Date("2025-01-01T15:00:00.000Z")
+      new Date("2025-01-02T03:00:00.000Z")
     );
     expect(result.since).toEqual(new Date("2024-01-01T15:00:00.000Z"));
     expect(result.until).toEqual(new Date("2024-01-02T15:00:00.000Z"));
   });
 
-  it("UTC 1/2 14:59:59 (JST 1/2 23:59:59) だと UTC 1/1 15:00:00 (JST 1/2 00:00:00) から UTC 1/2 15:00:00 (JST 1/3 00:00:00) を返す", () => {
+  it("UTC 1/2 14:59:59 (JST 1/2 23:59:59) だと UTC 1/2 02:59:59 (JST 1/2 11:59:59) から UTC 1/3 02:59:59 (JST 1/3 11:59:59) を返す", () => {
     const result = getOneYearAgoRangeWithTZ(
       new Date("2025-01-02T14:59:59.000Z")
     );
-    expect(result.since).toEqual(new Date("2024-01-01T15:00:00.000Z"));
-    expect(result.until).toEqual(new Date("2024-01-02T15:00:00.000Z"));
+    expect(result.since).toEqual(new Date("2024-01-02T02:59:59.000Z"));
+    expect(result.until).toEqual(new Date("2024-01-03T02:59:59.000Z"));
   });
 });
 
