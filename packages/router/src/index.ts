@@ -10,7 +10,7 @@ const app = new Hono();
 
 app.get("/", (c) =>
   c.text(
-    "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-feeds"
+    "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-toybox"
   )
 );
 

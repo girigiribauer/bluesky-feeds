@@ -1,5 +1,5 @@
 {
-  "name": "bluesky-feeds",
+  "name": "bluesky-toybox",
   "version": "0.0.1",
   "description": "",
   "author": "girigiribauer",
@@ -7,10 +7,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "npm start -w packages/feed-router",
+    "start": "npm start -w packages/router",
     "build": "npm run build -ws",
     "test": "npm run test -ws --if-present",
-    "dev": "npm run dev -w packages/feed-router",
+    "dev": "npm run dev -w packages/router",
     "publish": "npx tsx scripts/publishFeed.ts",
     "unpublish": "npm tsx scripts/unpublishFeed.ts"
   },
@@ -28,7 +28,7 @@
     "packages/helloworld",
     "packages/todoapp",
     "packages/oneyearago",
-    "packages/feed-router"
+    "packages/router"
   ],
   "volta": {
     "node": "22.12.0"
