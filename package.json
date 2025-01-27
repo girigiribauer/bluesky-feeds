@@ -12,7 +12,7 @@
     "test": "npm run test -ws --if-present",
     "dev": "npm run dev -w packages/router",
     "publish": "npx tsx scripts/publishFeed.ts",
-    "unpublish": "npm tsx scripts/unpublishFeed.ts"
+    "unpublish": "npx tsx scripts/unpublishFeed.ts"
   },
   "devDependencies": {
     "@atproto/api": "^0.13.20",
