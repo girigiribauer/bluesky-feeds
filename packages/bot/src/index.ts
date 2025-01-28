@@ -1,6 +1,6 @@
 import { Bot } from "@skyware/bot";
 import dotenv from "dotenv";
-import { scheduleJob } from "node-schedule";
+import { scheduleJob, gracefulShutdown } from "node-schedule";
 
 export const createBot = async (): Promise<void> => {
   dotenv.config({ path: "../../.env" });
@@ -33,7 +33,7 @@ export const createBot = async (): Promise<void> => {
     });
   });
 
-  scheduleJob("42 * * * *", async (fireDate: Date) => {
+  scheduleJob("42 */3 * * *", async (fireDate: Date) => {
     const time = new Intl.DateTimeFormat("ja-JP", {
       year: "numeric",
       month: "2-digit",
@@ -48,5 +48,9 @@ export const createBot = async (): Promise<void> => {
     const text = `毎時42分に投稿する自動運用テストです！ (${time})`;
     console.log(`scheduled: ${text}`);
     await bot.post({ text });
+  });
+
+  process.on("SIGINT", () => {
+    gracefulShutdown().then(() => process.exit(0));
   });
 };
