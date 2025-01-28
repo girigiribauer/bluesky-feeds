@@ -17,6 +17,7 @@
   "devDependencies": {
     "@atproto/api": "^0.13.20",
     "@types/node": "^20.11.17",
+    "@types/node-schedule": "^2.1.7",
     "dotenv": "^16.4.7",
     "msw": "^2.7.0",
     "tsx": "^4.7.1",
@@ -28,7 +29,8 @@
     "packages/helloworld",
     "packages/todoapp",
     "packages/oneyearago",
-    "packages/router"
+    "packages/router",
+    "packages/bot"
   ],
   "volta": {
     "node": "22.12.0"

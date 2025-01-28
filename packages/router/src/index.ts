@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { posts as helloworldPosts } from "helloworld";
 import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
+import { createBot } from "bot";
 import { isFeedService, validateAuthHonoRequest } from "shared";
 
 const app = new Hono();
@@ -52,6 +53,8 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
       return c.json(await oneyearagoPosts(did));
   }
 });
+
+await createBot();
 
 serve({
   fetch: app.fetch,
