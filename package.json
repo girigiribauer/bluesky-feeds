@@ -29,8 +29,8 @@
     "packages/helloworld",
     "packages/todoapp",
     "packages/oneyearago",
-    "packages/router",
-    "packages/bot"
+    "packages/bot",
+    "packages/router"
   ],
   "volta": {
     "node": "22.12.0"
