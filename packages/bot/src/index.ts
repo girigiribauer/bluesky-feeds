@@ -2,7 +2,7 @@ import { Bot } from "@skyware/bot";
 import dotenv from "dotenv";
 import { scheduleJob } from "node-schedule";
 
-export const createBot = async () => {
+export const createBot = async (): Promise<void> => {
   dotenv.config({ path: "../../.env" });
   const handle = process.env.BOT_HANDLE;
   const password = process.env.BOT_PASSWORD;
