@@ -17,6 +17,14 @@ export const createBot = async (): Promise<void> => {
     password: password,
   });
 
+  bot.on("mention", async (reply) => {
+    console.log(`mention: from ${JSON.stringify(reply, null, 2)}`);
+    await reply.like();
+    await reply.reply({
+      text: "ありがとうございます！自動運用のためお返事返せません！",
+    });
+  });
+
   bot.on("reply", async (reply) => {
     console.log(`reply: from ${JSON.stringify(reply, null, 2)}`);
     await reply.like();
@@ -25,8 +33,19 @@ export const createBot = async (): Promise<void> => {
     });
   });
 
-  scheduleJob("42 * * * *", async (fireDate) => {
-    const text = `毎時42分に投稿する自動運用テストです！ (${fireDate})`;
+  scheduleJob("42 * * * *", async (fireDate: Date) => {
+    const time = new Intl.DateTimeFormat("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Tokyo",
+    }).format(fireDate);
+
+    const text = `毎時42分に投稿する自動運用テストです！ (${time})`;
     console.log(`scheduled: ${text}`);
     await bot.post({ text });
   });
