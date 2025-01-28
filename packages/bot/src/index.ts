@@ -18,7 +18,7 @@ export const createBot = async (): Promise<void> => {
   });
 
   bot.on("mention", async (reply) => {
-    console.log(`mention: from ${JSON.stringify(reply, null, 2)}`);
+    console.log(`mention: from ${reply.uri}`);
     await reply.like();
     await reply.reply({
       text: "ありがとうございます！自動運用のためお返事返せません！",
@@ -26,7 +26,7 @@ export const createBot = async (): Promise<void> => {
   });
 
   bot.on("reply", async (reply) => {
-    console.log(`reply: from ${JSON.stringify(reply, null, 2)}`);
+    console.log(`reply: from ${reply.uri}`);
     await reply.like();
     await reply.reply({
       text: "ありがとうございます！自動運用のためお返事返せません！",
