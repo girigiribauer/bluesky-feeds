@@ -33,24 +33,25 @@ export const createBot = async (): Promise<void> => {
     });
   });
 
-  scheduleJob("42 */3 * * *", async (fireDate: Date) => {
-    const time = new Intl.DateTimeFormat("ja-JP", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-      timeZone: "Asia/Tokyo",
-    }).format(fireDate);
+  // scheduleJob("42 */3 * * *", async (fireDate: Date) => {
+  //   const time = new Intl.DateTimeFormat("ja-JP", {
+  //     year: "numeric",
+  //     month: "2-digit",
+  //     day: "2-digit",
+  //     hour: "2-digit",
+  //     minute: "2-digit",
+  //     second: "2-digit",
+  //     hour12: false,
+  //     timeZone: "Asia/Tokyo",
+  //   }).format(fireDate);
 
-    const text = `毎時42分に投稿する自動運用テストです！ (${time})`;
-    console.log(`scheduled: ${text}`);
-    await bot.post({ text });
-  });
+  //   const text = `毎時42分に投稿する自動運用テストです！ (${time})`;
+  //   console.log(`scheduled: ${text}`);
+  //   await bot.post({ text });
+  // });
 
   process.on("SIGINT", () => {
+    bot.removeAllListeners();
     gracefulShutdown().then(() => process.exit(0));
   });
 };
