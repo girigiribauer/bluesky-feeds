@@ -53,6 +53,7 @@ export const isFeedService = (name: string): name is FeedServiceType => {
 export const validateAuthHonoRequest = async (
   honoRequest: HonoRequest
 ): Promise<string> => {
+  console.log("called validateAuthHonoRequest");
   const authorization = honoRequest.header("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
     throw new AuthRequiredError();

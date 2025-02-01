@@ -9,13 +9,17 @@ import { isFeedService, validateAuthHonoRequest } from "shared";
 
 const app = new Hono();
 
-app.get("/", (c) =>
-  c.text(
+app.get("/", (c) => {
+  console.log("called route '/'");
+
+  return c.text(
     "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-toybox"
-  )
-);
+  );
+});
 
 app.get("/.well-known/did.json", (c) => {
+  console.log("called route '/.well-known/did.json'");
+
   return c.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
     id: "did:web:feeds.bsky.girigiribauer.com",
@@ -30,14 +34,18 @@ app.get("/.well-known/did.json", (c) => {
 });
 
 app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
+  console.log("called route '/xrpc/app.bsky.feed.getFeedSkeleton'");
+
   const feed = c.req.query("feed");
   if (!feed) {
+    console.error("Feed query param is missing");
     throw "Feed query param is missing";
   }
 
   const uri: AtUri = new AtUri(feed);
   const feedService = uri.rkey;
   if (!isFeedService(feedService)) {
+    console.error("Feed service name is mismatch");
     throw "Feed service name is mismatch";
   }
 
