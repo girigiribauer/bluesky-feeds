@@ -58,9 +58,11 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
       return c.json(await helloworldPosts());
     case "todoapp":
       did = await validateAuthHonoRequest(c.req);
+      console.log(`did: ${did}`);
       return c.json(await todoappPosts(did));
     case "oneyearago":
       did = await validateAuthHonoRequest(c.req);
+      console.log(`did: ${did}`);
       return c.json(await oneyearagoPosts(did));
   }
 });
