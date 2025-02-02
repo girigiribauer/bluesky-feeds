@@ -36,11 +36,14 @@ app.get("/.well-known/did.json", (c) => {
 app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
   console.log("called route '/xrpc/app.bsky.feed.getFeedSkeleton'");
 
+  const url = c.req.url;
+  console.log(`url = ${url}`);
   const feed = c.req.query("feed");
   if (!feed) {
     console.error("Feed query param is missing");
     throw "Feed query param is missing";
   }
+  console.log(`feed param = ${feed}`);
 
   const uri: AtUri = new AtUri(feed);
   const feedService = uri.rkey;
