@@ -25,6 +25,10 @@ export const createBot = async (): Promise<void> => {
     });
   });
 
+  bot.on("error", (error) => {
+    console.log(`error: ${error}`);
+  });
+
   bot.on("reply", async (reply) => {
     console.log(`reply: from ${reply.uri}`);
     await reply.like();
