@@ -37,7 +37,7 @@ export const createBot = async (): Promise<void> => {
     });
   });
 
-  scheduleJob("*/30 * * * *", async (fireDate: Date) => {
+  scheduleJob("*/10 * * * *", async (fireDate: Date) => {
     const time = new Intl.DateTimeFormat("ja-JP", {
       year: "numeric",
       month: "2-digit",
