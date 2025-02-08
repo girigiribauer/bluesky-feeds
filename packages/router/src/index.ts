@@ -7,10 +7,13 @@ import { posts as oneyearagoPosts } from "oneyearago";
 import { createBot } from "bot";
 import { isFeedService, validateAuthHonoRequest } from "shared";
 
+const startupTime = new Date().toISOString();
+console.log(`App started at: ${startupTime}`);
+
 const app = new Hono();
 
 app.get("/", (c) => {
-  console.log("called route '/'");
+  console.log(`called route '/' ${startupTime}`);
 
   return c.text(
     "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-toybox"
@@ -18,7 +21,7 @@ app.get("/", (c) => {
 });
 
 app.get("/.well-known/did.json", (c) => {
-  console.log("called route '/.well-known/did.json'");
+  console.log(`called route '/.well-known/did.json' ${startupTime}`);
 
   return c.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -34,7 +37,9 @@ app.get("/.well-known/did.json", (c) => {
 });
 
 app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
-  console.log("called route '/xrpc/app.bsky.feed.getFeedSkeleton'");
+  console.log(
+    `called route '/xrpc/app.bsky.feed.getFeedSkeleton' ${startupTime}`
+  );
 
   const url = c.req.url;
   console.log(`url = ${url}`);
