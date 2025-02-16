@@ -60,13 +60,8 @@ jobs:
           ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} << EOF
             # PM2の起動（初回のみ start、それ以降 reload）
             cd /var/www/${DOMAIN}/current
-            # ecosystem.config.js の存在確認
-            if [ ! -f ecosystem.config.js ]; then
-              echo "ecosystem.config.js not found, please check the configuration"
-              exit 1
-            fi
             if ! pm2 describe ${DOMAIN} > /dev/null; then
-              pm2 start ecosystem.config.js --env production --name ${DOMAIN}
+              pm2 start index.js --env production --name ${DOMAIN}
             else
               pm2 reload ${DOMAIN}
             fi
