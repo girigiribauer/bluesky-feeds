@@ -7,19 +7,26 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "npm start -w packages/router",
-    "build": "npm run build -ws",
+    "start": "node dist/index.js",
+    "build": "tsc -b .",
     "test": "npm run test -ws --if-present",
-    "dev": "npm run dev -w packages/router",
-    "publish": "npx tsx scripts/publishFeed.ts",
-    "unpublish": "npx tsx scripts/unpublishFeed.ts"
+    "dev": "tsx watch src/index.ts",
+    "publish": "tsx scripts/publishFeed.ts",
+    "unpublish": "tsx scripts/unpublishFeed.ts"
   },
   "devDependencies": {
     "@atproto/api": "^0.13.20",
+    "@atproto/syntax": "^0.3.1",
+    "@hono/node-server": "^1.13.7",
     "@types/node": "^20.11.17",
     "@types/node-schedule": "^2.1.7",
     "dotenv": "^16.4.7",
+    "helloworld": "workspace:*",
+    "hono": "^4.6.15",
     "msw": "^2.7.0",
+    "oneyearago": "workspace:*",
+    "shared": "workspace:*",
+    "todoapp": "workspace:*",
     "tsx": "^4.7.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
@@ -28,9 +35,7 @@
     "packages/shared",
     "packages/helloworld",
     "packages/todoapp",
-    "packages/oneyearago",
-    "packages/bot",
-    "packages/router"
+    "packages/oneyearago"
   ],
   "volta": {
     "node": "22.12.0"

@@ -1,20 +1,17 @@
 {
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "composite": true,
-    "verbatimModuleSyntax": true,
-    "declaration": true,
-    "declarationMap": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": [
-      "node"
-    ]
+    "rootDir": "src",
+    "outDir": "dist",
   },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": ["node_modules", "dist"],
   "references": [
-    { "path": "packages/shared" }
+    { "path": "packages/shared" },
+    { "path": "packages/helloworld" },
+    { "path": "packages/todoapp" },
+    { "path": "packages/oneyearago" }
   ]
 }

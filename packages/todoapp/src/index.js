@@ -1,0 +1,49 @@
+import { AtpAgent } from "@atproto/api";
+import { isThreadViewPost, } from "@atproto/api/dist/client/types/app/bsky/feed/defs.js";
+import {} from "shared";
+const startTrigger = "TODO";
+const replyTrigger = "DONE";
+const filterPost = async (agent, post) => {
+    const record = post.record;
+    if (!record.text.toLowerCase().startsWith(startTrigger.toLowerCase())) {
+        return false;
+    }
+    if (post.replyCount === 0) {
+        return true;
+    }
+    const threadResponse = await agent.app.bsky.feed.getPostThread({
+        uri: post.uri,
+    });
+    if (!isThreadViewPost(threadResponse.data.thread)) {
+        return false;
+    }
+    const replies = (threadResponse.data.thread.replies ?? []).filter((r) => isThreadViewPost(r));
+    return !replies.find((r) => {
+        const record = r.post.record;
+        return record.text.toLowerCase().startsWith(replyTrigger.toLowerCase());
+    });
+};
+const getTodo = async (did) => {
+    const agent = new AtpAgent({
+        service: "https://public.api.bsky.app/",
+    });
+    const searchResponse = await agent.app.bsky.feed.searchPosts({
+        q: startTrigger,
+        author: did,
+        limit: 100,
+    });
+    if (!searchResponse.success) {
+        return [];
+    }
+    const posts = searchResponse.data.posts;
+    const filtered = (await Promise.all(posts.map(async (p) => ((await filterPost(agent, p)) ? p : null)))).filter((p) => p !== null);
+    return filtered.map((a) => a.uri);
+};
+export const posts = async (did) => {
+    const todoPosts = await getTodo(did);
+    return {
+        feed: todoPosts.map((uri) => ({
+            post: uri,
+        })),
+    };
+};

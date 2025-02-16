@@ -1,6 +1,6 @@
 # bluesky-toybox
 
-Bluesky のフィードやその他諸々の置き場です
+Bluesky のフィード置き場です
 
 - [helloworld](https://github.com/girigiribauer/bluesky-toybox/blob/main/packages/helloworld/README.md)
   - 最小構成でフィードを動かす
@@ -27,8 +27,3 @@ npm run dev
 npm run publish
 npm run unpublish
 ```
-
-## 構成
-
-- Hono https://hono.dev/
-- render https://render.com/

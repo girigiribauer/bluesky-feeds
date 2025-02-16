@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "composite": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "shared": ["packages/shared/src"],
+      "helloworld": ["packages/helloworld/src"],
+      "todoapp": ["packages/todoapp/src"],
+      "oneyearago": ["packages/oneyearago/src"]
+    }
+  }
+}
