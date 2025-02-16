@@ -1,4 +1,4 @@
-# bluesky-toybox
+# bluesky-feeds
 
 Bluesky のフィード置き場です
 
