@@ -58,10 +58,8 @@ jobs:
           SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
         run: |
           ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} << EOF
-            whoami # ubuntu で実行が必要なので確認
             # PM2の起動（初回のみ start、それ以降 reload）
             cd /var/www/${DOMAIN}/current
-            ls -la
             if ! pm2 describe ${DOMAIN} > /dev/null; then
               pm2 start index.js --env production --name ${DOMAIN}
             else
