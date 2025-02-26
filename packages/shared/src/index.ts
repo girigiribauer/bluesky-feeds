@@ -81,6 +81,7 @@ export const verifyAuth = async (
     }
   );
 
+  console.log(`exp: ${parsed.exp}`);
   return {
     did: parsed.iss,
     accessJwt: jwt,

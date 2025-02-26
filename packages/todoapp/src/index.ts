@@ -42,7 +42,7 @@ const filterPost = async (
 const getTodo = async (auth: UserAuth): Promise<string[]> => {
   const fetchWithJwt = async (
     url: RequestInfo | URL,
-    options: RequestInit | undefined = {}
+    options: RequestInit = {}
   ) => {
     const headers = {
       ...options.headers,
