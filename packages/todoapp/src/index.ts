@@ -42,18 +42,8 @@ const filterPost = async (
 
 const getTodo = async (auth: UserAuth): Promise<string[]> => {
   const agent = new AtpAgent({
-    service: "https://bsky.social",
-    // fetch: (url, opts = {}) => {
-    //   opts.headers = {
-    //     ...opts.headers,
-    //     Authorization: `Bearer ${auth.accessJwt}`,
-    //   };
-    //   console.log(opts);
-    //   return fetch(url, opts);
-    // },
+    service: "https://public.api.bsky.app",
   });
-  agent.setHeader("Authorization", `Bearer ${auth.accessJwt}`);
-  console.log(`JWT: "${auth.accessJwt}"`); // 余計な空白や改行がないかチェック
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
     q: startTrigger,

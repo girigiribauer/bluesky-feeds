@@ -92,21 +92,8 @@ const getOneDayPosts = async (
 };
 
 export const posts = async (auth: UserAuth): Promise<FeedSkeletonResult> => {
-  const fetchWithJwt = async (
-    url: RequestInfo | URL,
-    options: RequestInit | undefined = {}
-  ) => {
-    const headers = {
-      ...options.headers,
-      Authorization: `Bearer ${auth.accessJwt}`,
-    };
-
-    return fetch(url, { ...options, headers });
-  };
-
   const agent = new AtpAgent({
-    service: "https://bsky.social",
-    fetch: fetchWithJwt,
+    service: "https://public.api.bsky.app",
   });
 
   const range = getOneYearAgoRangeWithTZ(new Date());
