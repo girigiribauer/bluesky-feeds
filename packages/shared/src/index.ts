@@ -19,6 +19,11 @@ export type FeedSkeletonResult = {
   }[];
 };
 
+export type UserAuth = {
+  did: string;
+  accessJwt: string;
+};
+
 export const SERVICE_DID = "did:web:feeds.bsky.girigiribauer.com" as const;
 
 export const FEED_SERVICES = ["helloworld", "todoapp", "oneyearago"] as const;
@@ -50,10 +55,10 @@ export const isFeedService = (name: string): name is FeedServiceType => {
   return FEED_SERVICES.includes(name as FeedServiceType);
 };
 
-export const validateAuthHonoRequest = async (
+export const verifyAuth = async (
   honoRequest: HonoRequest
-): Promise<string> => {
-  console.log("called validateAuthHonoRequest");
+): Promise<UserAuth> => {
+  console.log("called verifyAuth");
   const authorization = honoRequest.header("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) {
     throw new AuthRequiredError();
@@ -76,5 +81,8 @@ export const validateAuthHonoRequest = async (
     }
   );
 
-  return parsed.iss;
+  return {
+    did: parsed.iss,
+    accessJwt: jwt,
+  };
 };

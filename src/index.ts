@@ -4,7 +4,8 @@ import { Hono } from "hono";
 import { posts as helloworldPosts } from "helloworld";
 import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
-import { isFeedService, validateAuthHonoRequest } from "shared";
+import { isFeedService, verifyAuth } from "shared";
+import type { UserAuth } from "./models/UserAuth";
 
 const startupTime = new Date().toISOString();
 console.log(`App started at: ${startupTime}`);
@@ -56,18 +57,18 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     throw "Feed service name is mismatch";
   }
 
-  let did: string;
+  let auth: UserAuth;
   switch (feedService) {
     case "helloworld":
       return c.json(await helloworldPosts());
     case "todoapp":
-      did = await validateAuthHonoRequest(c.req);
-      console.log(`did: ${did}`);
-      return c.json(await todoappPosts(did));
+      auth = await verifyAuth(c.req);
+      console.log(`did: ${auth.did}`);
+      return c.json(await todoappPosts(auth));
     case "oneyearago":
-      did = await validateAuthHonoRequest(c.req);
-      console.log(`did: ${did}`);
-      return c.json(await oneyearagoPosts(did));
+      auth = await verifyAuth(c.req);
+      console.log(`did: ${auth.did}`);
+      return c.json(await oneyearagoPosts(auth));
   }
 });
 

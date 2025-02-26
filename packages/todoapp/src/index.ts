@@ -4,7 +4,7 @@ import {
   type PostView,
 } from "@atproto/api/dist/client/types/app/bsky/feed/defs.js";
 import type { Record } from "@atproto/api/dist/client/types/app/bsky/feed/post.js";
-import { type FeedSkeletonResult } from "shared";
+import type { FeedSkeletonResult, UserAuth } from "shared";
 
 const startTrigger = "TODO";
 const replyTrigger = "DONE";
@@ -39,14 +39,27 @@ const filterPost = async (
   });
 };
 
-const getTodo = async (did: string): Promise<string[]> => {
+const getTodo = async (auth: UserAuth): Promise<string[]> => {
+  const fetchWithJwt = async (
+    url: RequestInfo | URL,
+    options: RequestInit | undefined = {}
+  ) => {
+    const headers = {
+      ...options.headers,
+      Authorization: `Bearer ${auth.accessJwt}`,
+    };
+
+    return fetch(url, { ...options, headers });
+  };
+
   const agent = new AtpAgent({
-    service: "https://public.api.bsky.app/",
+    service: "https://bsky.social",
+    fetch: fetchWithJwt,
   });
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
     q: startTrigger,
-    author: did,
+    author: auth.did,
     limit: 100,
   });
 
@@ -64,8 +77,8 @@ const getTodo = async (did: string): Promise<string[]> => {
   return filtered.map((a) => a.uri);
 };
 
-export const posts = async (did: string): Promise<FeedSkeletonResult> => {
-  const todoPosts = await getTodo(did);
+export const posts = async (auth: UserAuth): Promise<FeedSkeletonResult> => {
+  const todoPosts = await getTodo(auth);
 
   return {
     feed: todoPosts.map((uri) => ({

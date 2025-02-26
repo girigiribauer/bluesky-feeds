@@ -1,6 +1,6 @@
 import { AtpAgent } from "@atproto/api";
 import type { Record } from "@atproto/api/dist/client/types/app/bsky/feed/post.js";
-import { type FeedSkeletonResult } from "shared";
+import { type FeedSkeletonResult, type UserAuth } from "shared";
 
 type DateTimeRange = {
   since: Date;
@@ -51,13 +51,13 @@ export const getOneYearAgoRangeWithTZ = (date: Date): DateTimeRange => {
 
 const getOneDayPosts = async (
   agent: AtpAgent,
-  did: string,
+  auth: UserAuth,
   range: DateTimeRange,
   acc: PostAccumulator = { posts: [] }
 ): Promise<string[]> => {
   const cursor = acc.cursor ? acc.cursor : range.until.toISOString();
   const searchResponse = await agent.app.bsky.feed.getAuthorFeed({
-    actor: did,
+    actor: auth.did,
     cursor,
     limit: 100,
   });
@@ -68,7 +68,7 @@ const getOneDayPosts = async (
   }
 
   const posts = searchResponse.data.feed.filter((a) => {
-    if (a.post.author.did !== did) {
+    if (a.post.author.did !== auth.did) {
       return false;
     }
 
@@ -85,19 +85,32 @@ const getOneDayPosts = async (
     await new Promise((resolve) => {
       setTimeout(() => resolve, 1000);
     });
-    return await getOneDayPosts(agent, did, range, acc);
+    return await getOneDayPosts(agent, auth, range, acc);
   }
 
   return acc.posts;
 };
 
-export const posts = async (did: string): Promise<FeedSkeletonResult> => {
+export const posts = async (auth: UserAuth): Promise<FeedSkeletonResult> => {
+  const fetchWithJwt = async (
+    url: RequestInfo | URL,
+    options: RequestInit | undefined = {}
+  ) => {
+    const headers = {
+      ...options.headers,
+      Authorization: `Bearer ${auth.accessJwt}`,
+    };
+
+    return fetch(url, { ...options, headers });
+  };
+
   const agent = new AtpAgent({
-    service: "https://public.api.bsky.app/",
+    service: "https://bsky.social",
+    fetch: fetchWithJwt,
   });
 
   const range = getOneYearAgoRangeWithTZ(new Date());
-  const posts = await getOneDayPosts(agent, did, range);
+  const posts = await getOneDayPosts(agent, auth, range);
 
   return {
     feed: posts.map((post) => ({ post })),
