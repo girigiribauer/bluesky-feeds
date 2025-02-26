@@ -63,7 +63,8 @@ jobs:
             if ! pm2 describe ${DOMAIN} > /dev/null; then
               pm2 start index.js --env production --name ${DOMAIN}
             else
-              pm2 restart ${DOMAIN}
+              pm2 delete ${DOMAIN}
+              pm2 start ${DOMAIN}
             fi
           EOF
 
