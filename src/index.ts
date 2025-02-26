@@ -4,8 +4,7 @@ import { Hono } from "hono";
 import { posts as helloworldPosts } from "helloworld";
 import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
-import { isFeedService, verifyAuth } from "shared";
-import type { UserAuth } from "./models/UserAuth";
+import { isFeedService, verifyAuth, type UserAuth } from "shared";
 
 const startupTime = new Date().toISOString();
 console.log(`App started at: ${startupTime}`);
