@@ -53,35 +53,11 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
     // },
   });
 
-  // トークンのデコード
-  const decoded = decode(auth.accessJwt);
-
-  // 現在のUTC時刻を取得
-  const currentTime = Math.floor(Date.now() / 1000); // 秒単位で取得
-
-  let searchResponse: AppBskyFeedSearchPosts.Response;
-
-  // トークンの有効期限（exp）をチェック
-  if (
-    (decoded as JwtPayload).payload.exp &&
-    (decoded as JwtPayload).payload.exp > currentTime
-  ) {
-    console.log("JWTは有効期限内です。APIリクエストを送信します。");
-
-    try {
-      searchResponse = await agent.app.bsky.feed.searchPosts({
-        q: startTrigger,
-        author: auth.did,
-        limit: 100,
-      });
-    } catch (error) {
-      console.error("APIリクエスト中にエラーが発生しました:", error);
-      throw "internal error";
-    }
-  } else {
-    console.log("JWTが有効期限切れです。新しいトークンを取得してください。");
-    throw "internal error";
-  }
+  const searchResponse = await agent.app.bsky.feed.searchPosts({
+    q: startTrigger,
+    author: auth.did,
+    limit: 100,
+  });
 
   if (!searchResponse.success) {
     return [];
