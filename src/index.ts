@@ -6,6 +6,8 @@ import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
 import { isFeedService, verifyAuth, type UserAuth } from "shared";
 
+process.env.TZ = "UTC";
+
 const startupTime = new Date().toISOString();
 console.log(`App started at: ${startupTime}`);
 
