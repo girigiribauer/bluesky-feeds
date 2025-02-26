@@ -49,6 +49,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
         ...opts.headers,
         Authorization: `Bearer ${auth.accessJwt}`,
       };
+      console.log(opts);
       return fetch(url, opts);
     },
   });
