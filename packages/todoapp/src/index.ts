@@ -41,33 +41,16 @@ const filterPost = async (
 
 const getTodo = async (auth: UserAuth): Promise<string[]> => {
   console.log(auth);
-  const fetchWithJwt = async (
-    url: RequestInfo | URL,
-    options: RequestInit = {}
-  ) => {
-    const headers = {
-      ...options.headers,
-      Authorization: `Bearer ${auth.accessJwt}`,
-    };
-
-    console.log("Authorization Header:", `Bearer ${auth.accessJwt}`); // ここでヘッダーを確認
-    console.log("Request URL:", url);
-    console.log("Request Options:", options);
-    console.log("Request Headers:", headers);
-
-    const response = await globalThis.fetch(url, { ...options, headers });
-
-    console.log("Response Status:", response.status);
-    console.log("Response Headers:", response.headers);
-    const body = await response.json();
-    console.log("Response Body:", body);
-
-    return response;
-  };
 
   const agent = new AtpAgent({
     service: "https://bsky.social",
-    fetch: fetchWithJwt,
+    fetch: (url, opts = {}) => {
+      opts.headers = {
+        ...opts.headers,
+        Authorization: `Bearer ${auth.accessJwt}`,
+      };
+      return fetch(url, opts);
+    },
   });
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
