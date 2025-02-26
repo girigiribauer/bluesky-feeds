@@ -42,6 +42,20 @@ const filterPost = async (
 
 const getTodo = async (auth: UserAuth): Promise<string[]> => {
   console.log(auth);
+
+  // トークンのデコード
+  const decoded = jwtDecode(auth.accessJwt);
+
+  // 現在のUTC時刻を取得
+  const currentTime = Math.floor(Date.now() / 1000); // 秒単位で取得
+
+  // トークンの有効期限（exp）をチェック
+  if (decoded.exp && decoded.exp > currentTime) {
+    console.log("JWTは有効期限内です。APIリクエストを送信します。");
+  } else {
+    console.log("JWTが有効期限切れです。新しいトークンを取得してください。");
+  }
+
   console.log(jwtDecode(auth.accessJwt));
   const agent = new AtpAgent({
     service: "https://bsky.social",
