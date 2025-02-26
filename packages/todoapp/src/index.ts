@@ -56,6 +56,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
     service: "https://bsky.social",
     fetch: fetchWithJwt,
   });
+  console.log(agent.did);
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
     q: startTrigger,
