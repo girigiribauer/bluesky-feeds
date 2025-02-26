@@ -1,4 +1,5 @@
 import { AtpAgent } from "@atproto/api";
+import { jwtDecode } from "jwt-decode";
 import {
   isThreadViewPost,
   type PostView,
@@ -41,7 +42,7 @@ const filterPost = async (
 
 const getTodo = async (auth: UserAuth): Promise<string[]> => {
   console.log(auth);
-
+  console.log(jwtDecode(auth.accessJwt));
   const agent = new AtpAgent({
     service: "https://bsky.social",
     // fetch: (url, opts = {}) => {
