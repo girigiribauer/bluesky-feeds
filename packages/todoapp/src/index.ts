@@ -1,4 +1,4 @@
-import { AppBskyFeedSearchPosts, AtpAgent } from "@atproto/api";
+import { AtpAgent } from "@atproto/api";
 import { decode, type JwtPayload } from "jsonwebtoken";
 import {
   isThreadViewPost,
@@ -52,6 +52,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
     //   return fetch(url, opts);
     // },
   });
+  agent.setHeader("Authorization", `Bearer ${auth.accessJwt}`);
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
     q: startTrigger,
