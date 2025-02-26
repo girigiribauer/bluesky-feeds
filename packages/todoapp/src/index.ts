@@ -44,21 +44,28 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
 
   const agent = new AtpAgent({
     service: "https://bsky.social",
-    fetch: (url, opts = {}) => {
-      opts.headers = {
-        ...opts.headers,
-        Authorization: `Bearer ${auth.accessJwt}`,
-      };
-      console.log(opts);
-      return fetch(url, opts);
-    },
+    // fetch: (url, opts = {}) => {
+    //   opts.headers = {
+    //     ...opts.headers,
+    //     Authorization: `Bearer ${auth.accessJwt}`,
+    //   };
+    //   console.log(opts);
+    //   return fetch(url, opts);
+    // },
   });
 
-  const searchResponse = await agent.app.bsky.feed.searchPosts({
-    q: startTrigger,
-    author: auth.did,
-    limit: 100,
-  });
+  const searchResponse = await agent.app.bsky.feed.searchPosts(
+    {
+      q: startTrigger,
+      author: auth.did,
+      limit: 100,
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${auth.accessJwt}`,
+      },
+    }
+  );
 
   if (!searchResponse.success) {
     return [];
