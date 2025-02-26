@@ -17,6 +17,7 @@
     "@atproto/api": "^0.13.20",
     "@atproto/syntax": "^0.3.1",
     "@hono/node-server": "^1.13.7",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^20.11.17",
     "@types/node-schedule": "^2.1.7",
     "dotenv": "^16.4.7",
@@ -41,6 +42,6 @@
     "node": "22.12.0"
   },
   "dependencies": {
-    "jwt-decode": "^4.0.0"
+    "jsonwebtoken": "^9.0.2"
   }
 }

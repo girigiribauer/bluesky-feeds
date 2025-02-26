@@ -1,5 +1,5 @@
 import { AppBskyFeedSearchPosts, AtpAgent } from "@atproto/api";
-import { jwtDecode } from "jwt-decode";
+import { decode, type JwtPayload } from "jsonwebtoken";
 import {
   isThreadViewPost,
   type PostView,
@@ -54,7 +54,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
   });
 
   // トークンのデコード
-  const decoded = jwtDecode(auth.accessJwt);
+  const decoded = decode(auth.accessJwt);
 
   // 現在のUTC時刻を取得
   const currentTime = Math.floor(Date.now() / 1000); // 秒単位で取得
@@ -62,22 +62,18 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
   let searchResponse: AppBskyFeedSearchPosts.Response;
 
   // トークンの有効期限（exp）をチェック
-  if (decoded.exp && decoded.exp > currentTime) {
+  if (
+    (decoded as JwtPayload).payload.exp &&
+    (decoded as JwtPayload).payload.exp > currentTime
+  ) {
     console.log("JWTは有効期限内です。APIリクエストを送信します。");
 
     try {
-      searchResponse = await agent.app.bsky.feed.searchPosts(
-        {
-          q: startTrigger,
-          author: auth.did,
-          limit: 100,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${auth.accessJwt}`,
-          },
-        }
-      );
+      searchResponse = await agent.app.bsky.feed.searchPosts({
+        q: startTrigger,
+        author: auth.did,
+        limit: 100,
+      });
     } catch (error) {
       console.error("APIリクエスト中にエラーが発生しました:", error);
       throw "internal error";
