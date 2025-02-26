@@ -63,10 +63,12 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     case "todoapp":
       auth = await verifyAuth(c.req);
       console.log(`did: ${auth.did}`);
+      console.log("accessJwt:", auth.accessJwt);
       return c.json(await todoappPosts(auth));
     case "oneyearago":
       auth = await verifyAuth(c.req);
       console.log(`did: ${auth.did}`);
+      console.log("accessJwt:", auth.accessJwt);
       return c.json(await oneyearagoPosts(auth));
   }
 });
