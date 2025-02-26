@@ -64,7 +64,7 @@ jobs:
               pm2 start index.js --env production --name ${DOMAIN}
             else
               pm2 delete ${DOMAIN}
-              pm2 start ${DOMAIN}
+              pm2 start index.js --env production --name ${DOMAIN}
             fi
           EOF
 
