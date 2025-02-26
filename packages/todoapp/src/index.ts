@@ -50,7 +50,19 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
       Authorization: `Bearer ${auth.accessJwt}`,
     };
 
-    return fetch(url, { ...options, headers });
+    console.log("Authorization Header:", `Bearer ${auth.accessJwt}`); // ここでヘッダーを確認
+    console.log("Request URL:", url);
+    console.log("Request Options:", options);
+    console.log("Request Headers:", headers);
+
+    const response = await fetch(url, { ...options, headers });
+
+    console.log("Response Status:", response.status);
+    console.log("Response Headers:", response.headers);
+    const body = await response.json();
+    console.log("Response Body:", body);
+
+    return response;
   };
 
   const agent = new AtpAgent({
