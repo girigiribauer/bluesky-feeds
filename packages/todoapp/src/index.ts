@@ -55,7 +55,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
     console.log("Request Options:", options);
     console.log("Request Headers:", headers);
 
-    const response = await fetch(url, { ...options, headers });
+    const response = await globalThis.fetch(url, { ...options, headers });
 
     console.log("Response Status:", response.status);
     console.log("Response Headers:", response.headers);
