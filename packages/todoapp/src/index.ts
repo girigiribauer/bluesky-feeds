@@ -53,6 +53,7 @@ const getTodo = async (auth: UserAuth): Promise<string[]> => {
     // },
   });
   agent.setHeader("Authorization", `Bearer ${auth.accessJwt}`);
+  console.log(`JWT: "${auth.accessJwt}"`); // 余計な空白や改行がないかチェック
 
   const searchResponse = await agent.app.bsky.feed.searchPosts({
     q: startTrigger,
