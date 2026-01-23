@@ -11,6 +11,9 @@ process.env.TZ = "UTC";
 const startupTime = new Date().toISOString();
 console.log(`App started at: ${startupTime}`);
 
+// Rustサーバーへのプロキシ設定
+const RUST_FEED_URL = process.env.RUST_FEED_URL || "http://localhost:3001";
+
 const app = new Hono();
 
 app.get("/", (c) => {
@@ -58,10 +61,40 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     throw "Feed service name is mismatch";
   }
 
+  // helloworldの場合はRustサーバーにプロキシ
+  if (feedService === "helloworld") {
+    try {
+      const queryString = new URLSearchParams(
+        c.req.query() as Record<string, string>
+      ).toString();
+      const rustUrl = `${RUST_FEED_URL}/xrpc/app.bsky.feed.getFeedSkeleton?${queryString}`;
+
+      console.log(`Proxying to Rust server: ${rustUrl}`);
+
+      const response = await fetch(rustUrl, {
+        headers: {
+          Authorization: c.req.header("Authorization") || "",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Rust server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log(`Rust server response received`);
+      return c.json(data);
+    } catch (error) {
+      console.error("Failed to proxy to Rust server:", error);
+      // フォールバック: TypeScript側で処理
+      console.log("Falling back to TypeScript implementation");
+      return c.json(await helloworldPosts());
+    }
+  }
+
+  // 他のフィードは従来通り処理
   let auth: UserAuth;
   switch (feedService) {
-    case "helloworld":
-      return c.json(await helloworldPosts());
     case "todoapp":
       auth = await verifyAuth(c.req);
       console.log(`did: ${auth.did}`);
