@@ -18,6 +18,8 @@ struct FeedQuery {
 
 #[tokio::main]
 async fn main() {
+    println!("Starting Rust Bluesky Feed Generator...");
+
     // ログ初期化
     tracing_subscriber::registry()
         .with(
@@ -26,6 +28,8 @@ async fn main() {
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    tracing::info!("Log initialized");
 
     // ルーター構築
     let app = Router::new()
@@ -40,10 +44,17 @@ async fn main() {
         .unwrap_or(3001);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
+    println!("Attempting to bind/listen on {}", addr);
     tracing::info!("Rust feed server listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .expect("Failed to bind to address");
+
+    println!("Server started successfully");
+    axum::serve(listener, app)
+        .await
+        .expect("Server failed to run");
 }
 
 async fn root() -> &'static str {
