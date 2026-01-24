@@ -20,7 +20,7 @@ app.get("/", (c) => {
   console.log(`called route '/' ${startupTime}`);
 
   return c.text(
-    "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-toybox"
+    "お試しでフィードを作っています https://github.com/girigiribauer/bluesky-feeds"
   );
 });
 
