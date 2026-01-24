@@ -6,11 +6,11 @@ pub fn get_posts() -> FeedSkeletonResult {
         cursor: None,
         feed: vec![
             FeedItem {
-                post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3lbrqkqsgv22w"
+                post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3jtadqcbi7r2a"
                     .to_string(),
             },
             FeedItem {
-                post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3lbrqkfr6ok2w"
+                post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3ldy6oad3vk27"
                     .to_string(),
             },
         ],
