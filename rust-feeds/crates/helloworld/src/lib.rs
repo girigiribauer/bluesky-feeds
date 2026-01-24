@@ -10,7 +10,7 @@ pub fn get_posts() -> FeedSkeletonResult {
                     .to_string(),
             },
             FeedItem {
-                post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3jtadqcbi7r2a"
+                post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldcooerekc2y"
                     .to_string(),
             },
         ],
