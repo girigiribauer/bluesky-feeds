@@ -15,7 +15,10 @@ RUN mkdir -p src crates/shared/src crates/helloworld/src && \
     rm -rf src crates
 
 # 実際のソースコードをコピーしてビルド
+# 実際のソースコードをコピーしてビルド
 COPY . .
+# タイムスタンプを更新して再ビルドを強制する
+RUN touch src/main.rs crates/shared/src/lib.rs crates/helloworld/src/lib.rs
 RUN cargo build --release
 
 # ランタイムステージ
