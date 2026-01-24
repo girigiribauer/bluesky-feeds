@@ -8,9 +8,35 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PATH_PREFIX: /var/www/
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Docker Buildx のセットアップ
+        uses: docker/setup-buildx-action@v3
+
+      - name: GitHub Container Registry へログイン
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rust アプリの Docker イメージをビルド・プッシュ
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rust-feeds
+          file: ./rust-feeds/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/feeds-bsky-rust:latest
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Node.js のセットアップ
         uses: actions/setup-node@v3
         with:
@@ -35,8 +61,6 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           # rsync でカスタムポートを指定してアップロード (TypeScript dist)
           rsync -avz --delete --exclude '.git*' -e "ssh -p $SSH_PORT -o StrictHostKeyChecking=no" ./dist/ ubuntu@${{ secrets.VPS_IP }}:${{ env.PATH_PREFIX }}${{ secrets.DOMAIN }}/releases/${{ env.RELEASE_TIMESTAMP }}/
-          # rsync で Rust プロジェクトもアップロード
-          rsync -avz --exclude 'target' --exclude '.git*' -e "ssh -p $SSH_PORT -o StrictHostKeyChecking=no" ./rust-feeds/ ubuntu@${{ secrets.VPS_IP }}:${{ env.PATH_PREFIX }}${{ secrets.DOMAIN }}/releases/${{ env.RELEASE_TIMESTAMP }}/rust-feeds/
       - name: シンボリックリンクの貼り替え
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -45,6 +69,13 @@ jobs:
           SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
         run: |
           ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "ln -snf ${{ env.PATH_PREFIX }}${{ secrets.DOMAIN }}/releases/${{ env.RELEASE_TIMESTAMP }} ${{ env.PATH_PREFIX }}${{ secrets.DOMAIN }}/current"
+      - name: コンテナの更新と再起動
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && docker compose pull rust-feeds && docker compose up -d"
       - name: 古いリリースを削除 (最新5つを残す)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
