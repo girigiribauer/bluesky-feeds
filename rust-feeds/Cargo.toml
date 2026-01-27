@@ -3,6 +3,7 @@ members = [
     "crates/models",
     "crates/jetstream",
     "crates/helloworld",
+    "crates/todoapp",
 ]
 resolver = "2"
 
@@ -44,6 +45,7 @@ tracing-subscriber = { workspace = true }
 models = { path = "crates/models" }
 jetstream = { path = "crates/jetstream" }
 helloworld = { path = "crates/helloworld" }
+todoapp = { path = "crates/todoapp" }
 jetstream-oxide = { workspace = true }
 atrium-api = { workspace = true }
 tokio-util = { workspace = true }

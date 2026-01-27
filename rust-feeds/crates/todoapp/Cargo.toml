@@ -1,0 +1,15 @@
+[package]
+name = "todoapp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+models = { path = "../models" }
+atrium-api = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+base64 = "0.22"
+serde_json = { workspace = true }

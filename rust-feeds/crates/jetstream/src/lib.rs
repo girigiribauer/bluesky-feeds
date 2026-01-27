@@ -28,15 +28,12 @@ where
 
     let connector = JetstreamConnector::new(config)?;
     let receiver = connector.connect().await?;
-    tracing::info!("Jetstream connected successfully");
 
     while let Ok(event) = receiver.recv_async().await {
         if let JetstreamEvent::Commit(event) = event {
             callback(&event);
         }
     }
-    tracing::warn!("Jetstream receiver loop exited (connection closed?)");
-
 
     Ok(())
 }

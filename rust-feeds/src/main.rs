@@ -21,7 +21,6 @@ struct FeedQuery {
     limit: Option<usize>,
 }
 
-// 共有ステート
 type SharedState = Arc<RwLock<AppState>>;
 
 #[derive(Default)]
@@ -33,7 +32,6 @@ struct AppState {
 async fn main() {
     println!("Starting Rust Bluesky Feed Generator...");
 
-    // ログ初期化
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -44,21 +42,13 @@ async fn main() {
 
     tracing::info!("Log initialized");
 
-    // 共有ステートの初期化
     let state: SharedState = Arc::new(RwLock::new(AppState::default()));
 
-    // Jetstreamインジェスターをバックグラウンドで起動
     let state_for_ingester = state.clone();
     tokio::spawn(async move {
-        // インフラ詳細（URLや圧縮設定など）は shared 側にお任せ
-        // ここでは「イベントが来たらどこに渡すか」だけを記述
         let result = jetstream::connect_and_run(move |event| {
             if let Ok(mut lock) = state_for_ingester.write() {
-                // helloworldフィードにイベントを配給
                 helloworld::process_event(&mut lock.helloworld, event);
-
-                // 将来のフィードもここに追加するだけでOK
-                // todoapp::process_event(&mut lock.todoapp, event);
             }
         })
         .await;
@@ -68,14 +58,12 @@ async fn main() {
         }
     });
 
-    // ルーター構築
     let app = Router::new()
         .route("/", get(root))
         .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(get_feed_skeleton))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    // サーバー起動
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -101,11 +89,11 @@ async fn root() -> &'static str {
 
 async fn get_feed_skeleton(
     State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
     Query(params): Query<FeedQuery>,
 ) -> Result<Json<models::FeedSkeletonResult>, StatusCode> {
     tracing::info!("Received feed request: {} (cursor={:?}, limit={:?})", params.feed, params.cursor, params.limit);
 
-    // フィード名を抽出 (at://did:web:.../app.bsky.feed.generator/helloworld)
     let feed_name = params
         .feed
         .split('/')
@@ -124,6 +112,20 @@ async fn get_feed_skeleton(
                 )))
             } else {
                 Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+        FeedService::Todoapp => {
+            let auth_header = headers
+                .get("authorization")
+                .and_then(|h| h.to_str().ok())
+                .ok_or(StatusCode::UNAUTHORIZED)?;
+
+            match todoapp::get_feed_skeleton(auth_header).await {
+                Ok(res) => Ok(Json(res)),
+                Err(e) => {
+                    tracing::error!("Todoapp error: {}", e);
+                    Err(StatusCode::INTERNAL_SERVER_ERROR)
+                }
             }
         }
         _ => {

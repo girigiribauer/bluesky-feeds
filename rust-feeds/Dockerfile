@@ -18,7 +18,7 @@ RUN mkdir -p src crates/models/src crates/jetstream/src crates/helloworld/src &&
     echo "pub fn dummy() {}" > crates/models/src/lib.rs && \
     echo "pub fn dummy() {}" > crates/jetstream/src/lib.rs && \
     echo "pub fn dummy() {}" > crates/helloworld/src/lib.rs && \
-    cargo build --release --verbose && \
+    cargo build --release && \
     rm -rf src crates
 
 # 実際のソースコードをコピーしてビルド

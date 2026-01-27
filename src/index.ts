@@ -2,7 +2,6 @@ import { AtUri } from "@atproto/syntax";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 
-import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
 import { isFeedService, verifyAuth, type UserAuth } from "shared";
 
@@ -61,8 +60,8 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     throw "Feed service name is mismatch";
   }
 
-  // helloworldの場合はRustサーバーにプロキシ
-  if (feedService === "helloworld") {
+  // helloworld, todoappの場合はRustサーバーにプロキシ
+  if (feedService === "helloworld" || feedService === "todoapp") {
     try {
       const queryString = new URLSearchParams(
         c.req.query() as Record<string, string>
@@ -93,11 +92,7 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
   // 他のフィードは従来通り処理
   let auth: UserAuth;
   switch (feedService) {
-    case "todoapp":
-      auth = await verifyAuth(c.req);
-      console.log(`did: ${auth.did}`);
-      console.log("accessJwt:", auth.accessJwt);
-      return c.json(await todoappPosts(auth));
+
     case "oneyearago":
       auth = await verifyAuth(c.req);
       console.log(`did: ${auth.did}`);
