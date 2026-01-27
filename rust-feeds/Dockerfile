@@ -3,6 +3,11 @@ FROM rustlang/rust:nightly-slim AS builder
 
 WORKDIR /build
 
+RUN apt-get update && \
+    apt-get install -y pkg-config libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+
 # 依存関係のキャッシュ用にダミープロジェクトをビルド
 COPY Cargo.toml Cargo.lock ./
 COPY crates/models/Cargo.toml ./crates/models/Cargo.toml
