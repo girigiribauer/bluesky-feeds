@@ -13,18 +13,20 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/models/Cargo.toml ./crates/models/Cargo.toml
 COPY crates/jetstream/Cargo.toml ./crates/jetstream/Cargo.toml
 COPY crates/helloworld/Cargo.toml ./crates/helloworld/Cargo.toml
-RUN mkdir -p src crates/models/src crates/jetstream/src crates/helloworld/src && \
+COPY crates/todoapp/Cargo.toml ./crates/todoapp/Cargo.toml
+RUN mkdir -p src crates/models/src crates/jetstream/src crates/helloworld/src crates/todoapp/src && \
     echo "fn main() {}" > src/main.rs && \
     echo "pub fn dummy() {}" > crates/models/src/lib.rs && \
     echo "pub fn dummy() {}" > crates/jetstream/src/lib.rs && \
     echo "pub fn dummy() {}" > crates/helloworld/src/lib.rs && \
+    echo "pub fn dummy() {}" > crates/todoapp/src/lib.rs && \
     cargo build --release && \
     rm -rf src crates
 
 # 実際のソースコードをコピーしてビルド
 COPY . .
 # タイムスタンプを更新して再ビルドを強制する
-RUN touch src/main.rs crates/models/src/lib.rs crates/jetstream/src/lib.rs crates/helloworld/src/lib.rs
+RUN touch src/main.rs crates/models/src/lib.rs crates/jetstream/src/lib.rs crates/helloworld/src/lib.rs crates/todoapp/src/lib.rs
 RUN cargo build --release
 
 # ランタイムステージ
