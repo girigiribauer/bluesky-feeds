@@ -43,7 +43,16 @@ async fn main() {
 
     tracing::info!("Log initialized");
 
-    let state: SharedState = Arc::new(RwLock::new(AppState::default()));
+    // Initialize app state with custom HTPP client (User-Agent required for Public API)
+    let client = reqwest::Client::builder()
+        .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
+        .build()
+        .expect("Failed to build HTTP client");
+
+    let state: SharedState = Arc::new(RwLock::new(AppState {
+        helloworld: helloworld::State::default(),
+        http_client: client,
+    }));
 
     let state_for_ingester = state.clone();
     tokio::spawn(async move {
