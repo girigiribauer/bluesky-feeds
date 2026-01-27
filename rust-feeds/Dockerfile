@@ -1,5 +1,5 @@
 # ビルドステージ
-FROM rust:nightly-slim AS builder
+FROM rustlang/rust:nightly-slim AS builder
 
 WORKDIR /build
 
