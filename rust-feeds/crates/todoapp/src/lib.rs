@@ -59,13 +59,14 @@ fn extract_did_from_jwt(header: &str) -> Result<String> {
     Ok(payload.iss)
 }
 
-async fn search_posts(client: &Client, q: &str, author_did: &str, auth_header: &str) -> Result<Vec<PostView>> {
-    let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
+async fn search_posts(client: &Client, q: &str, author_did: &str, _auth_header: &str) -> Result<Vec<PostView>> {
+    // Note: Public API seems to require lowercase 'searchposts' to avoid 403 Forbidden (see issue 332)
+    let url = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchposts";
     let query_param = format!("{}", q); // q parameter
 
     let res = client
         .get(url)
-        .header("Authorization", auth_header)
+        // .header("Authorization", auth_header) // Public API does not accept this restricted token
         .query(&[
             ("q", query_param.as_str()),
             ("limit", "100"),
