@@ -1,5 +1,5 @@
 # ビルドステージ
-FROM rust:1.84-slim as builder
+FROM rust:nightly-slim AS builder
 
 WORKDIR /build
 
