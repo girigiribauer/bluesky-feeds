@@ -70,14 +70,20 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
 
       console.log(`Proxying to Rust server: ${rustUrl}`);
 
+      const headers: Record<string, string> = {};
+      const auth = c.req.header("Authorization");
+      if (auth) {
+        headers["Authorization"] = auth;
+      }
+
       const response = await fetch(rustUrl, {
-        headers: {
-          Authorization: c.req.header("Authorization") || "",
-        },
+        headers,
       });
 
       if (!response.ok) {
-        throw new Error(`Rust server error: ${response.status}`);
+        const text = await response.text();
+        console.error(`Rust server error details: ${text}`);
+        throw new Error(`Rust server error: ${response.status} - ${text}`);
       }
 
       const data = await response.json();

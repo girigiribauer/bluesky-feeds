@@ -92,16 +92,16 @@ async fn get_feed_skeleton(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Query(params): Query<FeedQuery>,
-) -> Result<Json<models::FeedSkeletonResult>, StatusCode> {
+) -> Result<Json<models::FeedSkeletonResult>, (StatusCode, String)> {
     tracing::info!("Received feed request: {} (cursor={:?}, limit={:?})", params.feed, params.cursor, params.limit);
 
     let feed_name = params
         .feed
         .split('/')
         .last()
-        .ok_or(StatusCode::BAD_REQUEST)?;
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed param".to_string()))?;
 
-    let service = FeedService::from_str(feed_name).ok_or(StatusCode::NOT_FOUND)?;
+    let service = FeedService::from_str(feed_name).ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
 
     match service {
         FeedService::Helloworld => {
@@ -112,32 +112,34 @@ async fn get_feed_skeleton(
                     params.limit,
                 )))
             } else {
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()))
             }
         }
         FeedService::Todoapp => {
             let auth_header = headers
                 .get("authorization")
                 .and_then(|h| h.to_str().ok())
-                .ok_or(StatusCode::UNAUTHORIZED)?;
+                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
 
+            // Read client from state
             let client = if let Ok(lock) = state.read() {
                 lock.http_client.clone()
             } else {
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
             };
 
             match todoapp::get_feed_skeleton(&client, auth_header).await {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
                     tracing::error!("Todoapp error: {}", e);
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
+                    // Return the error message body so the proxy can see it
+                    Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
                 }
             }
         }
         _ => {
             tracing::warn!("Feed not implemented: {:?}", service);
-            Err(StatusCode::NOT_IMPLEMENTED)
+            Err((StatusCode::NOT_IMPLEMENTED, "Not implemented".to_string()))
         }
     }
 }
