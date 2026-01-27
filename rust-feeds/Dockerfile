@@ -28,7 +28,7 @@ RUN touch src/main.rs crates/models/src/lib.rs crates/jetstream/src/lib.rs crate
 RUN cargo build --release
 
 # ランタイムステージ
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && \
     apt-get install -y ca-certificates && \
