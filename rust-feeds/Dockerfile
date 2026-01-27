@@ -4,7 +4,7 @@ FROM rustlang/rust:nightly-slim AS builder
 WORKDIR /build
 
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev && \
+    apt-get install -y pkg-config libssl-dev perl make && \
     rm -rf /var/lib/apt/lists/*
 
 
