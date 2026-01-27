@@ -59,14 +59,43 @@ fn extract_did_from_jwt(header: &str) -> Result<String> {
     Ok(payload.iss)
 }
 
-async fn search_posts(client: &Client, q: &str, author_did: &str, _auth_header: &str) -> Result<Vec<PostView>> {
-    // Note: Public API seems to require lowercase 'searchposts' to avoid 403 Forbidden (see issue 332)
-    let url = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchposts";
+#[derive(Deserialize, Debug)]
+struct SessionResponse {
+    accessJwt: String,
+}
+
+pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Result<String> {
+    let url = "https://bsky.social/xrpc/com.atproto.server.createSession";
+    let body = serde_json::json!({
+        "identifier": handle,
+        "password": password,
+    });
+
+    let res = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .context("Failed to send auth request")?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let text = res.text().await.unwrap_or_default();
+        anyhow::bail!("Auth failed: {} - {}", status, text);
+    }
+
+    let session: SessionResponse = res.json().await.context("Failed to parse auth response")?;
+    Ok(session.accessJwt)
+}
+
+async fn search_posts(client: &Client, q: &str, author_did: &str, service_token: &str) -> Result<Vec<PostView>> {
+    // Authenticated API request using Service Token
+    let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
     let query_param = format!("{}", q); // q parameter
 
     let res = client
         .get(url)
-        // .header("Authorization", auth_header) // Public API does not accept this restricted token
+        .header("Authorization", format!("Bearer {}", service_token))
         .query(&[
             ("q", query_param.as_str()),
             ("limit", "100"),
@@ -87,13 +116,13 @@ async fn search_posts(client: &Client, q: &str, author_did: &str, _auth_header: 
     Ok(search_res.posts)
 }
 
-pub async fn get_feed_skeleton(client: &Client, auth_header: &str) -> Result<FeedSkeletonResult> {
-    let did = extract_did_from_jwt(auth_header).context("Failed to extract DID from auth")?;
+pub async fn get_feed_skeleton(client: &Client, user_jwt: &str, service_token: &str) -> Result<FeedSkeletonResult> {
+    let did = extract_did_from_jwt(user_jwt).context("Failed to extract DID from auth")?;
 
-    // 2-Query Strategy: Parallel fetch
+    // 2-Query Strategy: Parallel fetch using Service Token for API access
     let (todos_res, dones_res) = tokio::join!(
-        search_posts(client, "TODO", &did, auth_header),
-        search_posts(client, "DONE", &did, auth_header)
+        search_posts(client, "TODO", &did, service_token),
+        search_posts(client, "DONE", &did, service_token)
     );
 
     let todos = todos_res.context("Failed to fetch TODOs")?;

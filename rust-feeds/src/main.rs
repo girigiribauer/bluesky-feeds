@@ -27,6 +27,7 @@ type SharedState = Arc<RwLock<AppState>>;
 struct AppState {
     helloworld: helloworld::State,
     http_client: reqwest::Client,
+    service_token: Option<String>,
 }
 
 #[tokio::main]
@@ -43,15 +44,36 @@ async fn main() {
 
     tracing::info!("Log initialized");
 
-    // Initialize app state with custom HTPP client (User-Agent required for Public API)
+    // Initialize app state with standard HTTP client (User-Agent hack no longer needed)
     let client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
         .build()
         .expect("Failed to build HTTP client");
 
+    // Authenticate with Bluesky (Service Auth)
+    let handle = std::env::var("APP_HANDLE").unwrap_or_default();
+    let password = std::env::var("APP_PASSWORD").unwrap_or_default();
+    let mut service_token = None;
+
+    if !handle.is_empty() && !password.is_empty() {
+        tracing::info!("Authenticating as {}...", handle);
+        match todoapp::authenticate(&client, &handle, &password).await {
+            Ok(token) => {
+                tracing::info!("Successfully authenticated with Bluesky");
+                service_token = Some(token);
+            }
+            Err(e) => {
+                tracing::error!("Failed to authenticate with Bluesky: {}. Search API will fail.", e);
+            }
+        }
+    } else {
+        tracing::warn!("APP_HANDLE or APP_PASSWORD not set. Search API will fail.");
+    }
+
     let state: SharedState = Arc::new(RwLock::new(AppState {
         helloworld: helloworld::State::default(),
         http_client: client,
+        service_token,
     }));
 
     let state_for_ingester = state.clone();
@@ -130,14 +152,16 @@ async fn get_feed_skeleton(
                 .and_then(|h| h.to_str().ok())
                 .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
 
-            // Read client from state
-            let client = if let Ok(lock) = state.read() {
-                lock.http_client.clone()
+            // Read client and token from state
+            let (client, service_token) = if let Ok(lock) = state.read() {
+                (lock.http_client.clone(), lock.service_token.clone())
             } else {
                 return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
             };
 
-            match todoapp::get_feed_skeleton(&client, auth_header).await {
+            let token = service_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
+
+            match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
                     tracing::error!("Todoapp error: {:#}", e);
