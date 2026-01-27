@@ -75,10 +75,7 @@ jobs:
           DOMAIN: ${{ secrets.DOMAIN }}
           SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
         run: |
-          ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && \
-          if ! grep -q 'APP_HANDLE=' .env; then echo 'APP_HANDLE=${{ secrets.APP_HANDLE }}' >> .env; fi && \
-          if ! grep -q 'APP_PASSWORD=' .env; then echo 'APP_PASSWORD=${{ secrets.APP_PASSWORD }}' >> .env; fi && \
-          docker compose pull rust-feeds && docker compose --profile rust_app up -d && docker compose restart app"
+          ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && docker compose pull rust-feeds && docker compose --profile rust_app up -d && docker compose restart app"
       - name: 古いリリースを削除 (最新5つを残す)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
