@@ -267,6 +267,7 @@ dependencies = [
  "jetstream",
  "jetstream-oxide",
  "models",
+ "reqwest",
  "serde",
  "serde_json",
  "todoapp",

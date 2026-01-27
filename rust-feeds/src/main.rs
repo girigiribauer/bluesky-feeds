@@ -26,6 +26,7 @@ type SharedState = Arc<RwLock<AppState>>;
 #[derive(Default)]
 struct AppState {
     helloworld: helloworld::State,
+    http_client: reqwest::Client,
 }
 
 #[tokio::main]
@@ -120,7 +121,13 @@ async fn get_feed_skeleton(
                 .and_then(|h| h.to_str().ok())
                 .ok_or(StatusCode::UNAUTHORIZED)?;
 
-            match todoapp::get_feed_skeleton(auth_header).await {
+            let client = if let Ok(lock) = state.read() {
+                lock.http_client.clone()
+            } else {
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            };
+
+            match todoapp::get_feed_skeleton(&client, auth_header).await {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
                     tracing::error!("Todoapp error: {}", e);

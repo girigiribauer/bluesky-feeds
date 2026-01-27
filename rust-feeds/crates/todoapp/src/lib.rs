@@ -59,12 +59,13 @@ fn extract_did_from_jwt(header: &str) -> Result<String> {
     Ok(payload.iss)
 }
 
-async fn search_posts(client: &Client, q: &str, author_did: &str) -> Result<Vec<PostView>> {
-    let url = "https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts";
+async fn search_posts(client: &Client, q: &str, author_did: &str, auth_header: &str) -> Result<Vec<PostView>> {
+    let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
     let query_param = format!("{}", q); // q parameter
 
     let res = client
         .get(url)
+        .header("Authorization", auth_header)
         .query(&[
             ("q", query_param.as_str()),
             ("limit", "100"),
@@ -85,14 +86,13 @@ async fn search_posts(client: &Client, q: &str, author_did: &str) -> Result<Vec<
     Ok(search_res.posts)
 }
 
-pub async fn get_feed_skeleton(auth_header: &str) -> Result<FeedSkeletonResult> {
+pub async fn get_feed_skeleton(client: &Client, auth_header: &str) -> Result<FeedSkeletonResult> {
     let did = extract_did_from_jwt(auth_header).context("Failed to extract DID from auth")?;
-    let client = Client::new();
 
     // 2-Query Strategy: Parallel fetch
     let (todos_res, dones_res) = tokio::join!(
-        search_posts(&client, "TODO", &did),
-        search_posts(&client, "DONE", &did)
+        search_posts(client, "TODO", &did, auth_header),
+        search_posts(client, "DONE", &did, auth_header)
     );
 
     let todos = todos_res.context("Failed to fetch TODOs")?;
