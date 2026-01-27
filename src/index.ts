@@ -1,7 +1,7 @@
 import { AtUri } from "@atproto/syntax";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { posts as helloworldPosts } from "helloworld";
+
 import { posts as todoappPosts } from "todoapp";
 import { posts as oneyearagoPosts } from "oneyearago";
 import { isFeedService, verifyAuth, type UserAuth } from "shared";
@@ -86,9 +86,7 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
       return c.json(data);
     } catch (error) {
       console.error("Failed to proxy to Rust server:", error);
-      // フォールバック: TypeScript側で処理
-      console.log("Falling back to TypeScript implementation");
-      return c.json(await helloworldPosts());
+      throw error;
     }
   }
 

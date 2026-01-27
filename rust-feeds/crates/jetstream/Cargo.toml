@@ -1,0 +1,10 @@
+[package]
+name = "jetstream"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+jetstream-oxide = { workspace = true }
+atrium-api = { workspace = true }
+tracing = { workspace = true }

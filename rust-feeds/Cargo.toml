@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/shared",
+    "crates/models",
+    "crates/jetstream",
     "crates/helloworld",
 ]
 resolver = "2"
@@ -24,6 +25,12 @@ tower-http = { version = "0.5", features = ["trace", "cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
+jetstream-oxide = { version = "0.1" }
+atrium-api = { version = "0.25", default-features = false }
+tokio-util = "0.7"
+futures-util = "0.3"
+chrono = "0.4"
+cid = "0.10"
 
 [dependencies]
 tokio = { workspace = true }
@@ -34,5 +41,11 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-shared = { path = "crates/shared" }
+models = { path = "crates/models" }
+jetstream = { path = "crates/jetstream" }
 helloworld = { path = "crates/helloworld" }
+jetstream-oxide = { workspace = true }
+atrium-api = { workspace = true }
+tokio-util = { workspace = true }
+futures-util = { workspace = true }
+anyhow = { workspace = true }

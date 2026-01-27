@@ -22,7 +22,6 @@
     "@types/node-schedule": "^2.1.7",
     "dotenv": "^16.4.7",
     "esbuild": "^0.25.0",
-    "helloworld": "workspace:*",
     "hono": "^4.6.15",
     "msw": "^2.7.0",
     "oneyearago": "workspace:*",
@@ -34,7 +33,6 @@
   },
   "workspaces": [
     "packages/shared",
-    "packages/helloworld",
     "packages/todoapp",
     "packages/oneyearago"
   ],

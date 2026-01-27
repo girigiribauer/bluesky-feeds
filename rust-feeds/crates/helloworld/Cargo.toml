@@ -4,5 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-shared = { path = "../shared" }
+models = { path = "../models" }
 serde = { workspace = true }
+jetstream-oxide = { workspace = true }
+atrium-api = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+cid = { workspace = true }
+serde_json = { workspace = true }
+ipld-core = { version = "0.4" } # Adding missing dependency too
