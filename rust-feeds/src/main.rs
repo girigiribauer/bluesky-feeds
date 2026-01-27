@@ -131,9 +131,9 @@ async fn get_feed_skeleton(
             match todoapp::get_feed_skeleton(&client, auth_header).await {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
-                    tracing::error!("Todoapp error: {}", e);
+                    tracing::error!("Todoapp error: {:#}", e);
                     // Return the error message body so the proxy can see it
-                    Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+                    Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
                 }
             }
         }
