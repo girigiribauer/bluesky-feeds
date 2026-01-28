@@ -44,16 +44,20 @@ pub fn filter_todos(todos: Vec<PostView>, dones: Vec<PostView>) -> Vec<FeedItem>
 }
 
 fn is_valid_keyword(text: &str, keyword: &str) -> bool {
-    if text.len() < keyword.len() {
+    let keyword_len = keyword.chars().count();
+
+    if text.chars().count() < keyword_len {
         return false;
     }
 
-    let prefix = &text[..keyword.len()];
-    if !prefix.eq_ignore_ascii_case(keyword) {
+    let prefix_chars = text.chars().take(keyword_len);
+    let keyword_chars = keyword.chars();
+
+    if !prefix_chars.zip(keyword_chars).all(|(a, b)| a.eq_ignore_ascii_case(&b)) {
         return false;
     }
 
-    match text.chars().nth(keyword.len()) {
+    match text.chars().nth(keyword_len) {
         None => true,
         Some(c) => c.is_whitespace() || c == ':' || c == '：',
     }
@@ -108,7 +112,13 @@ mod tests {
 
         // 異常系: 文中にある
         assert!(!is_valid_keyword("I will do TODO", "TODO"), "文中のTODOはNG (前方一致のみ)");
+
+        // 異常系: マルチバイト文字 (Panic回避チェック)
+        assert!(!is_valid_keyword("あいうえお", "TODO"), "日本語開始でもPanicしないこと");
+        assert!(!is_valid_keyword("ＴＯＤＯ", "TODO"), "全角TODOは現状対象外(Panicしない)");
     }
+
+    // --- Integration Tests (High Level / Feed Logic) ---
 
     struct TestCase {
         name: &'static str,
