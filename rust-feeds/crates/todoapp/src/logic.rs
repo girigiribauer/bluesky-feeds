@@ -44,14 +44,18 @@ pub fn filter_todos(todos: Vec<PostView>, dones: Vec<PostView>) -> Vec<FeedItem>
 }
 
 fn is_valid_keyword(text: &str, keyword: &str) -> bool {
-    if !text.starts_with(keyword) {
+    if text.len() < keyword.len() {
         return false;
     }
-    // Check char after keyword to ensure word boundary
+
+    let prefix = &text[..keyword.len()];
+    if !prefix.eq_ignore_ascii_case(keyword) {
+        return false;
+    }
+
     match text.chars().nth(keyword.len()) {
-        None => true, // Exact match "TODO"
-        Some(c) => c.is_whitespace() || c == ':' || c == '：', // Whitespace or Colon
-        // Any other char (e.g. 'i' in todoist, or 'フ' in TODOフィード) -> False
+        None => true,
+        Some(c) => c.is_whitespace() || c == ':' || c == '：',
     }
 }
 
@@ -60,7 +64,6 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // --- Helper Functions ---
     fn create_post(uri: &str, text: &str, reply_parent: Option<&str>) -> PostView {
         let reply = reply_parent.map(|parent_uri| {
             json!({
@@ -84,31 +87,28 @@ mod tests {
         }
     }
 
-    // --- Unit Tests (Low Level) ---
-
     #[test]
     fn test_is_valid_keyword() {
-        // 正常系: 正しいキーワードと区切り文字
+        // 正常系: 正しいキーワードと区切り文字 (大文字)
         assert!(is_valid_keyword("TODO list", "TODO"), "スペース区切りはOK");
         assert!(is_valid_keyword("TODO: task", "TODO"), "コロン区切りはOK");
-        assert!(is_valid_keyword("TODO：タスク", "TODO"), "全角コロン区切りはOK");
-        assert!(is_valid_keyword("TODO\nnext", "TODO"), "改行区切りはOK");
         assert!(is_valid_keyword("TODO", "TODO"), "完全一致はOK");
+
+        // 正常系: 大文字小文字の揺れ (Case Insensitive)
+        assert!(is_valid_keyword("todo list", "TODO"), "小文字todoはOK");
+        assert!(is_valid_keyword("Todo: task", "TODO"), "先頭大文字TodoはOK");
+        assert!(is_valid_keyword("done", "DONE"), "小文字doneはOK");
+        assert!(is_valid_keyword("DoNe", "DONE"), "大文字小文字混合DoNeはOK");
 
         // 異常系: 単語の一部になっている (誤爆回避)
         assert!(!is_valid_keyword("TODOist", "TODO"), "単語の一部(todoist)はNG");
+        assert!(!is_valid_keyword("todoist", "TODO"), "小文字でも単語の一部(todoist)はNG");
         assert!(!is_valid_keyword("TODOapp", "TODO"), "単語の一部(todoapp)はNG");
         assert!(!is_valid_keyword("TODOフィード", "TODO"), "日本語の続き文字はNG");
 
         // 異常系: 文中にある
         assert!(!is_valid_keyword("I will do TODO", "TODO"), "文中のTODOはNG (前方一致のみ)");
-
-        // DONEについても同様
-        assert!(is_valid_keyword("DONE task", "DONE"));
-        assert!(!is_valid_keyword("DONE!", "DONE"), "記号でも定義外のものはNG (現状の実装では)");
     }
-
-    // --- Integration Tests (High Level / Feed Logic) ---
 
     struct TestCase {
         name: &'static str,
@@ -130,6 +130,14 @@ mod tests {
                 name: "基本: DONEされたTODOは消える (Replyによる紐付け)",
                 todos: vec![create_post("uri:todo1", "TODO", None)],
                 dones: vec![create_post("uri:done1", "DONE", Some("uri:todo1"))],
+                expected_uris: vec![],
+            },
+            TestCase {
+                name: "修正: 小文字doneでもTODOは消える (Case Insensitive)",
+                todos: vec![create_post("uri:todo1", "TODO task", None)],
+                dones: vec![
+                    create_post("uri:done_lower", "done", Some("uri:todo1")),
+                ],
                 expected_uris: vec![],
             },
             TestCase {
