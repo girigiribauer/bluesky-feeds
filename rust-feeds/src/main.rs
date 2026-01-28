@@ -1,34 +1,12 @@
-use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    response::Json,
-    routing::get,
-    Router,
-};
-use serde::Deserialize;
-use models::FeedService;
-use std::{
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-};
+mod handlers;
+mod state;
+
+use axum::{routing::get, Router};
+use state::{AppState, SharedState};
+use std::net::SocketAddr;
+use std::sync::{Arc, RwLock};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[derive(Debug, Deserialize)]
-struct FeedQuery {
-    feed: String,
-    cursor: Option<String>,
-    limit: Option<usize>,
-}
-
-type SharedState = Arc<RwLock<AppState>>;
-
-#[derive(Default)]
-struct AppState {
-    helloworld: helloworld::State,
-    http_client: reqwest::Client,
-    service_token: Option<String>,
-}
 
 #[tokio::main]
 async fn main() {
@@ -44,7 +22,7 @@ async fn main() {
 
     tracing::info!("Log initialized");
 
-    // Initialize app state with standard HTTP client (User-Agent hack no longer needed)
+    // Initialize app state with standard HTTP client
     let client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
         .build()
@@ -74,6 +52,8 @@ async fn main() {
         helloworld: helloworld::State::default(),
         http_client: client,
         service_token,
+        auth_handle: handle,
+        auth_password: password,
     }));
 
     let state_for_ingester = state.clone();
@@ -91,8 +71,8 @@ async fn main() {
     });
 
     let app = Router::new()
-        .route("/", get(root))
-        .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(get_feed_skeleton))
+        .route("/", get(handlers::root))
+        .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(handlers::get_feed_skeleton))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -113,66 +93,4 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("Server failed to run");
-}
-
-async fn root() -> &'static str {
-    "Rust Bluesky Feed Generator"
-}
-
-async fn get_feed_skeleton(
-    State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
-    Query(params): Query<FeedQuery>,
-) -> Result<Json<models::FeedSkeletonResult>, (StatusCode, String)> {
-    tracing::info!("Received feed request: {} (cursor={:?}, limit={:?})", params.feed, params.cursor, params.limit);
-
-    let feed_name = params
-        .feed
-        .split('/')
-        .last()
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed param".to_string()))?;
-
-    let service = FeedService::from_str(feed_name).ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
-
-    match service {
-        FeedService::Helloworld => {
-            if let Ok(lock) = state.read() {
-                Ok(Json(helloworld::get_feed_skeleton(
-                    &lock.helloworld,
-                    params.cursor,
-                    params.limit,
-                )))
-            } else {
-                Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()))
-            }
-        }
-        FeedService::Todoapp => {
-            let auth_header = headers
-                .get("authorization")
-                .and_then(|h| h.to_str().ok())
-                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
-
-            // Read client and token from state
-            let (client, service_token) = if let Ok(lock) = state.read() {
-                (lock.http_client.clone(), lock.service_token.clone())
-            } else {
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
-            };
-
-            let token = service_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
-
-            match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
-                Ok(res) => Ok(Json(res)),
-                Err(e) => {
-                    tracing::error!("Todoapp error: {:#}", e);
-                    // Return the error message body so the proxy can see it
-                    Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
-                }
-            }
-        }
-        _ => {
-            tracing::warn!("Feed not implemented: {:?}", service);
-            Err((StatusCode::NOT_IMPLEMENTED, "Not implemented".to_string()))
-        }
-    }
 }
