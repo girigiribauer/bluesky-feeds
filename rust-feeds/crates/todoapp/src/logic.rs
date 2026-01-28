@@ -59,7 +59,7 @@ fn is_valid_keyword(text: &str, keyword: &str) -> bool {
 
     match text.chars().nth(keyword_len) {
         None => true,
-        Some(c) => c.is_whitespace() || c == ':' || c == '：',
+        Some(c) => !c.is_alphanumeric(),
     }
 }
 
@@ -93,10 +93,10 @@ mod tests {
 
     #[test]
     fn test_is_valid_keyword() {
-        // 正常系: 正しいキーワードと区切り文字 (大文字)
-        assert!(is_valid_keyword("TODO list", "TODO"), "スペース区切りはOK");
-        assert!(is_valid_keyword("TODO: task", "TODO"), "コロン区切りはOK");
-        assert!(is_valid_keyword("TODO", "TODO"), "完全一致はOK");
+        // 正常系: 一般的な区切り文字
+        assert!(is_valid_keyword("TODO list", "TODO"), "スペースOK");
+        assert!(is_valid_keyword("TODO: list", "TODO"), "コロンOK");
+        assert!(is_valid_keyword("TODO", "TODO"), "完全一致OK");
 
         // 正常系: 大文字小文字の揺れ (Case Insensitive)
         assert!(is_valid_keyword("todo list", "TODO"), "小文字todoはOK");
@@ -104,21 +104,27 @@ mod tests {
         assert!(is_valid_keyword("done", "DONE"), "小文字doneはOK");
         assert!(is_valid_keyword("DoNe", "DONE"), "大文字小文字混合DoNeはOK");
 
-        // 異常系: 単語の一部になっている (誤爆回避)
-        assert!(!is_valid_keyword("TODOist", "TODO"), "単語の一部(todoist)はNG");
-        assert!(!is_valid_keyword("todoist", "TODO"), "小文字でも単語の一部(todoist)はNG");
-        assert!(!is_valid_keyword("TODOapp", "TODO"), "単語の一部(todoapp)はNG");
-        assert!(!is_valid_keyword("TODOフィード", "TODO"), "日本語の続き文字はNG");
+        // 正常系: 記号・絵文字 (is_alphanumeric() == false なもの)
+        assert!(is_valid_keyword("done!", "DONE"), "記号(!)OK");
+        assert!(is_valid_keyword("done.", "DONE"), "記号(.)OK");
+        assert!(is_valid_keyword("done?", "DONE"), "記号(?)OK");
+        assert!(is_valid_keyword("done🤭", "DONE"), "絵文字OK");
+        assert!(is_valid_keyword("done👍", "DONE"), "絵文字OK");
+        assert!(is_valid_keyword("TODO\nnext", "TODO"), "改行OK");
+
+        // 異常系: 単語の続き (is_alphanumeric() == true なもの)
+        assert!(!is_valid_keyword("TODOist", "TODO"), "英字続きNG");
+        assert!(!is_valid_keyword("todo123", "TODO"), "数字続きNG");
+        assert!(!is_valid_keyword("TODOする", "TODO"), "日本語続きNG");
+        assert!(!is_valid_keyword("TODOfeed", "TODO"), "英字続きNG");
 
         // 異常系: 文中にある
-        assert!(!is_valid_keyword("I will do TODO", "TODO"), "文中のTODOはNG (前方一致のみ)");
+        assert!(!is_valid_keyword("I will do TODO", "TODO"), "文中のTODOはNG");
 
         // 異常系: マルチバイト文字 (Panic回避チェック)
         assert!(!is_valid_keyword("あいうえお", "TODO"), "日本語開始でもPanicしないこと");
         assert!(!is_valid_keyword("ＴＯＤＯ", "TODO"), "全角TODOは現状対象外(Panicしない)");
     }
-
-    // --- Integration Tests (High Level / Feed Logic) ---
 
     struct TestCase {
         name: &'static str,
@@ -137,13 +143,13 @@ mod tests {
                 expected_uris: vec!["uri:todo1"],
             },
             TestCase {
-                name: "基本: DONEされたTODOは消える (Replyによる紐付け)",
+                name: "基本: DONEされたTODOは消える",
                 todos: vec![create_post("uri:todo1", "TODO", None)],
                 dones: vec![create_post("uri:done1", "DONE", Some("uri:todo1"))],
                 expected_uris: vec![],
             },
             TestCase {
-                name: "修正: 小文字doneでもTODOは消える (Case Insensitive)",
+                name: "基本: 小文字doneでもTODOは消える (Case Insensitive)",
                 todos: vec![create_post("uri:todo1", "TODO task", None)],
                 dones: vec![
                     create_post("uri:done_lower", "done", Some("uri:todo1")),
@@ -151,12 +157,28 @@ mod tests {
                 expected_uris: vec![],
             },
             TestCase {
+                name: "修正: 記号付き(done!)でも有効",
+                todos: vec![create_post("uri:todo1", "TODO task", None)],
+                dones: vec![
+                    create_post("uri:done_bang", "done!", Some("uri:todo1")),
+                ],
+                expected_uris: vec![],
+            },
+            TestCase {
+                name: "仕様: 単語の一部(todoist)は弾かれる",
+                todos: vec![
+                    create_post("uri:todoist", "todoist is great", None),
+                ],
+                dones: vec![],
+                expected_uris: vec![],
+            },
+            TestCase {
                 name: "仕様: DONE自体もキーワード判定を通っていないと有効にならない",
                 todos: vec![create_post("uri:todo1", "TODO", None)],
                 dones: vec![
-                    create_post("uri:done_fake", "I have DONE it", Some("uri:todo1")), // 文中DONEは無効
+                    create_post("uri:done_fake", "I have DONE it", Some("uri:todo1")),
                 ],
-                expected_uris: vec!["uri:todo1"], // 消えない
+                expected_uris: vec!["uri:todo1"],
             },
             TestCase {
                 name: "除外: TODO自体が返信である場合はフィードに出ない (ルート投稿のみ)",
