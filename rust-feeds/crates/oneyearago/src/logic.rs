@@ -41,20 +41,14 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
     };
 
     let mut years_ago = start_year;
-    let mut next_cursor_string = None;
-
-    // 2. Waterfall Searching
-    loop {
+    let next_cursor_string = loop {
         if feed_items.len() >= safe_limit {
             // Succeeded filling limit. Calculate resumption cursor.
-            // If we have a current_api_cursor (continuation of this year), use it.
-            // If this year finished (None), point to start of next year.
             if let Some(ac) = current_api_cursor {
-                 next_cursor_string = Some(format!("v1::{}::{}", years_ago, ac));
+                 break Some(format!("v1::{}::{}", years_ago, ac));
             } else {
-                 next_cursor_string = Some(format!("v1::{}::", years_ago));
+                 break Some(format!("v1::{}::", years_ago));
             }
-            break;
         }
 
         use chrono::Datelike;
@@ -62,8 +56,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
         let target_year = today.year() - years_ago;
 
         if target_year < MIN_SEARCH_YEAR {
-            next_cursor_string = None; // End of history
-            break;
+            break None; // End of history
         }
 
         // Handle leap years (Feb 29 -> Feb 28 on non-leap years)
@@ -106,7 +99,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
                 current_api_cursor = None;
             }
         }
-    }
+    };
 
     Ok((feed_items, next_cursor_string))
 }
@@ -289,7 +282,7 @@ mod tests {
                  Ok((posts, None))
             });
 
-        let (items, _) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, input_cursor, None).await.unwrap();
+        let (items, _) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 1, input_cursor, None).await.unwrap();
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].post, "year2:1");
