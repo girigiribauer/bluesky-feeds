@@ -117,7 +117,7 @@ pub async fn get_feed_skeleton(
             let token = current_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
 
             // First attempt
-            match oneyearago::get_feed_skeleton(&client, auth_header, &token, &did).await {
+            match oneyearago::get_feed_skeleton(&client, auth_header, &token, &did, params.limit.unwrap_or(30), params.cursor.clone()).await {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
                     let err_msg = format!("{:?}", e);
@@ -135,7 +135,7 @@ pub async fn get_feed_skeleton(
                                     }
 
                                     // Retry request with new token
-                                    match oneyearago::get_feed_skeleton(&client, auth_header, &new_token, &did).await {
+                                    match oneyearago::get_feed_skeleton(&client, auth_header, &new_token, &did, params.limit.unwrap_or(30), params.cursor.clone()).await {
                                         Ok(res) => Ok(Json(res)),
                                         Err(e2) => {
                                             tracing::error!("Retry failed: {:#}", e2);

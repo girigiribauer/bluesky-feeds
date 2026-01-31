@@ -6,6 +6,7 @@ use crate::timezone;
 #[derive(Debug, Deserialize, Clone)]
 pub struct SearchResponse {
     pub posts: Vec<PostView>,
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -31,9 +32,10 @@ pub trait PostFetcher {
         since: &str,
         until: &str,
         limit: usize,
-    ) -> Result<Vec<PostView>>;
+        cursor: Option<String>,
+    ) -> Result<(Vec<PostView>, Option<String>)>;
 
-    async fn determine_timezone(&self, handle: &str, token: &str) -> Result<chrono::FixedOffset>;
+    async fn determine_timezone(&self, handle: &str, user_token: &str) -> Result<chrono::FixedOffset>;
 }
 
 pub struct BlueskyFetcher {
@@ -55,11 +57,12 @@ impl PostFetcher for BlueskyFetcher {
         since: &str,
         until: &str,
         limit: usize,
-    ) -> Result<Vec<PostView>> {
+        cursor: Option<String>,
+    ) -> Result<(Vec<PostView>, Option<String>)> {
         let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
         let q = format!("from:{} since:{} until:{}", author, since, until);
 
-        let res = self.client
+        let mut req = self.client
             .get(url)
             .header("Authorization", format!("Bearer {}", token))
             .query(&[
@@ -67,17 +70,20 @@ impl PostFetcher for BlueskyFetcher {
                 ("limit", &limit.to_string()),
                 ("author", author),
                 ("sort", "latest"),
-            ])
-            .send()
-            .await
-            .context("Search request failed")?;
+            ]);
+
+        if let Some(c) = cursor {
+            req = req.query(&[("cursor", c)]);
+        }
+
+        let res = req.send().await.context("Search request failed")?;
 
         if !res.status().is_success() {
-            return Ok(vec![]);
+            return Ok((vec![], None));
         }
 
         let search_res: SearchResponse = res.json().await.context("Failed to parse search response")?;
-        Ok(search_res.posts)
+        Ok((search_res.posts, search_res.cursor))
     }
 
     async fn determine_timezone(&self, handle: &str, user_token: &str) -> Result<chrono::FixedOffset> {
