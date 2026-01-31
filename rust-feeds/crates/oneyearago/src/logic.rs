@@ -9,11 +9,12 @@ const DEFAULT_LIMIT: usize = 30;
 pub async fn fetch_posts_from_past<F: PostFetcher>(
     fetcher: &F,
     service_token: &str,
+    user_token: &str,
     actor: &str,
     now_utc: Option<chrono::DateTime<Utc>>, // Injectable "now"
 ) -> Result<Vec<FeedItem>> {
     // 1. Timezone
-    let tz_offset = fetcher.determine_timezone(actor, service_token).await.unwrap_or(chrono::FixedOffset::east_opt(0).unwrap());
+    let tz_offset = fetcher.determine_timezone(actor, user_token).await?;
 
     // 現在時刻 (UTC) -> ターゲットタイムゾーンへ変換
     let now_utc = now_utc.unwrap_or_else(Utc::now);
@@ -116,7 +117,7 @@ mod tests {
 
         // 2年前へのリクエストは発生しない
 
-        let items = fetch_posts_from_past(&mock, "token", "did:plc:test", None).await.unwrap();
+        let items = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", None).await.unwrap();
         assert_eq!(items.len(), 30);
     }
 
@@ -151,7 +152,7 @@ mod tests {
                 Ok(posts)
             });
 
-        let items = fetch_posts_from_past(&mock, "token", "did:plc:test", None).await.unwrap();
+        let items = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", None).await.unwrap();
 
         assert_eq!(items.len(), 30);
         assert_eq!(items[0].post, "year1:0"); // 先頭は1年前
@@ -176,7 +177,7 @@ mod tests {
             .times(2)
             .returning(|_, _, _, _, _| Ok(vec![])); // 常に空を返す
 
-        let items = fetch_posts_from_past(&mock, "token", "did:plc:test", Some(now)).await.unwrap();
+        let items = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", Some(now)).await.unwrap();
         assert_eq!(items.len(), 0);
     }
 
@@ -214,6 +215,6 @@ mod tests {
                 Ok(posts)
             });
 
-        let _ = fetch_posts_from_past(&mock, "token", "did:plc:test", Some(now_utc)).await.unwrap();
+        let _ = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", Some(now_utc)).await.unwrap();
     }
 }

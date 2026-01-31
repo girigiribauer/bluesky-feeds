@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use anyhow::{Context, Result};
 use chrono::FixedOffset;
 use regex::Regex;
@@ -5,13 +6,15 @@ use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct ProfileResponse {
     #[serde(default)]
     description: Option<String>,
 }
 
 /// Bioのテキストからタイムゾーンをパースする（純粋関数）
-fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
+#[allow(dead_code)]
+fn parse_timezone_description(description: &str, lang: Option<&str>) -> Option<FixedOffset> {
     // 1. Offsets: UTC+9 (GMT removed)
     // Matches "UTC+9", "UTC-05:00", "utc+9"
     let re_offset = Regex::new(r"(?i)UTC([\+\-]\d{1,2}(?::\d{2})?)").unwrap();
@@ -40,15 +43,26 @@ fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
         return Some(FixedOffset::east_opt(9 * 3600).unwrap());
     }
 
-    // Removed JST, 日本時間, EST, PST, GMT
+    // 3. Language setting (from Preferences)
+    if let Some(l) = lang {
+        if l == "ja" {
+            return Some(FixedOffset::east_opt(9 * 3600).unwrap());
+        }
+    }
 
+    // Default UTC
     None
 }
 
 /// タイムゾーンを決定する
-/// 1. Bioから正規表現で抽出
-/// 2. 言語設定(ja)から推定 (TODO: APIレスポンスにlangが含まれていないため、現状はBioのみ/Default UTC)
-pub async fn determine_timezone(client: &Client, handle: &str, token: &str) -> Result<FixedOffset> {
+/// 現在は固定で JST (UTC+09:00) を返す
+#[allow(unused_variables)]
+pub async fn determine_timezone(client: &Client, handle: &str, token: &str, lang: Option<String>) -> Result<FixedOffset> {
+    // 暫定対応: 全ユーザーをJSTとして扱う
+    Ok(FixedOffset::east_opt(9 * 3600).unwrap())
+
+    /*
+    // 将来的なロジック復帰用
     let url = "https://api.bsky.app/xrpc/app.bsky.actor.getProfile";
     let res = client
         .get(url)
@@ -59,15 +73,17 @@ pub async fn determine_timezone(client: &Client, handle: &str, token: &str) -> R
         .context("Failed to get profile")?;
 
     if !res.status().is_success() {
-        // プロフィール取得失敗時はUTCとする（非公開アカウントなど）
+        if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(anyhow::anyhow!("Unauthorized"));
+        }
         return Ok(FixedOffset::east_opt(0).unwrap());
     }
 
     let profile: ProfileResponse = res.json().await.context("Failed to parse profile")?;
     let description = profile.description.unwrap_or_default();
 
-    // 抽出ロジックに移譲
-    Ok(parse_timezone_description(&description).unwrap_or(FixedOffset::east_opt(0).unwrap()))
+    Ok(parse_timezone_description(&description, lang.as_deref()).unwrap_or(FixedOffset::east_opt(0).unwrap()))
+    */
 }
 
 #[cfg(test)]
@@ -78,35 +94,53 @@ mod tests {
     fn test_timezone_offsets() {
         // Standard formats
         let inputs = vec![
-            ("Living in UTC+9", Some(9 * 3600)),
-            ("UTC+09:00", Some(9 * 3600)),
-            ("UTC-05:00", Some(-5 * 3600)),
-            ("UTC+5:30", Some(5 * 3600 + 30 * 60)),
-            ("utc+9", Some(9 * 3600)),
-            // Removed support
-            ("Timezone: GMT-5", None),
-            ("GMT-03:45", None),
-            ("gmt-5", None),
+            ("Living in UTC+9", Some(9 * 3600), None),
+            ("UTC+09:00", Some(9 * 3600), None),
+            ("UTC-05:00", Some(-5 * 3600), None),
+            ("UTC+5:30", Some(5 * 3600 + 30 * 60), None),
+            ("utc+9", Some(9 * 3600), None),
+            // Real world example with emojis
+            ("🌍 UTC+09:00 🌏", Some(9 * 3600), None),
+            // Real world example with emojis
+            ("🌍 UTC+09:00 🌏", Some(9 * 3600), None),
+            // Japanese text only -> Implicit JST REMOVED -> Default UTC
+            ("こんにちは、日本でエンジニアをしています。", None, None),
+            ("移動は善", None, None), // Based on user profile logic removed
+            // Priority: Explicit Timezone > Japanese text
+            ("I live in NY (UTC-5). 日本語も話せます。", Some(-5 * 3600), None),
+            // Language setting "ja"
+            ("Hello", Some(9 * 3600), Some("ja")),
+            // Language setting "en" (no effect, UTC)
+            ("Hello", None, Some("en")),
+            // No Japanese -> Default UTC (None)
+            ("Hello world", None, None),
         ];
 
-        for (desc, expected) in inputs {
-            let offset_opt = parse_timezone_description(desc).map(|o| o.local_minus_utc());
-            assert_eq!(offset_opt, expected, "Failed for {}", desc);
+        for (desc, expected, lang) in inputs {
+            let offset_opt = parse_timezone_description(desc, lang).map(|o| o.local_minus_utc());
+            assert_eq!(offset_opt, expected, "Failed for {} with lang {:?}", desc, lang);
         }
     }
 
     #[test]
     fn test_timezone_keywords() {
         // Explicit Keywords
-        assert_eq!(parse_timezone_description("Asia/Tokyo"), Some(FixedOffset::east_opt(9 * 3600).unwrap()));
+        assert_eq!(parse_timezone_description("Asia/Tokyo", None), Some(FixedOffset::east_opt(9 * 3600).unwrap()));
 
-        // Removed
-        assert_eq!(parse_timezone_description("I am in JST"), None);
-        assert_eq!(parse_timezone_description("日本時間です"), None);
-        assert_eq!(parse_timezone_description("EST time"), None);
-        assert_eq!(parse_timezone_description("PST"), None);
+        // Keywords removed, inference removed -> None
+        assert_eq!(parse_timezone_description("日本時間です", None), None);
+
+        // "JST" alone has no Japanese chars, -> "ja" setting should make it JST
+        assert_eq!(parse_timezone_description("I am in JST", Some("ja")), Some(FixedOffset::east_opt(9 * 3600).unwrap()));
+
+        // "JST" alone, no lang -> None
+        assert_eq!(parse_timezone_description("I am in JST", None), None);
+
+        // "EST" / "PST" still None
+        assert_eq!(parse_timezone_description("EST time", None), None);
+        assert_eq!(parse_timezone_description("PST", None), None);
 
         // No match
-        assert_eq!(parse_timezone_description("Hello World"), None);
+        assert_eq!(parse_timezone_description("Hello World", None), None);
     }
 }

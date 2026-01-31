@@ -80,7 +80,47 @@ impl PostFetcher for BlueskyFetcher {
         Ok(search_res.posts)
     }
 
-    async fn determine_timezone(&self, handle: &str, token: &str) -> Result<chrono::FixedOffset> {
-        timezone::determine_timezone(&self.client, handle, token).await
+    async fn determine_timezone(&self, handle: &str, user_token: &str) -> Result<chrono::FixedOffset> {
+        let lang = self.get_preferences(user_token).await.ok().flatten();
+        timezone::determine_timezone(&self.client, handle, user_token, lang).await
+    }
+}
+
+impl BlueskyFetcher {
+    async fn get_preferences(&self, token: &str) -> Result<Option<String>> {
+        let url = "https://api.bsky.app/xrpc/app.bsky.actor.getPreferences";
+        let res = self.client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .context("Failed to get preferences")?;
+
+        if !res.status().is_success() {
+             return Ok(None);
+        }
+
+        let body: serde_json::Value = res.json().await.context("Failed to parse preferences")?;
+
+        // Search specifically for contentLanguages in preferences
+        // Since schema is loosely defined using unions, we search generally
+        if let Some(prefs) = body.get("preferences").and_then(|p| p.as_array()) {
+            for pref in prefs {
+                // Check for "contentInfo" or "personalDetails" or distinct "contentLanguages"
+                // Often stored as "languages" or "contentLanguages"
+                // e.g. { "$type": "...", "contentLanguages": ["ja"] }
+                if let Some(langs) = pref.get("contentLanguages").and_then(|l| l.as_array()) {
+                    for l in langs {
+                         if let Some(s) = l.as_str() {
+                             if s == "ja" {
+                                 return Ok(Some("ja".to_string()));
+                             }
+                         }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 }
