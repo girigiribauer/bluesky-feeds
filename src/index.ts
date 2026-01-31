@@ -60,8 +60,12 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
     throw "Feed service name is mismatch";
   }
 
-  // helloworld, todoappの場合はRustサーバーにプロキシ
-  if (feedService === "helloworld" || feedService === "todoapp") {
+  // helloworld, todoapp, oneyearagoの場合はRustサーバーにプロキシ
+  if (
+    feedService === "helloworld" ||
+    feedService === "todoapp" ||
+    feedService === "oneyearago"
+  ) {
     try {
       const queryString = new URLSearchParams(
         c.req.query() as Record<string, string>
@@ -93,17 +97,6 @@ app.get("/xrpc/app.bsky.feed.getFeedSkeleton", async (c) => {
       console.error("Failed to proxy to Rust server:", error);
       throw error;
     }
-  }
-
-  // 他のフィードは従来通り処理
-  let auth: UserAuth;
-  switch (feedService) {
-
-    case "oneyearago":
-      auth = await verifyAuth(c.req);
-      console.log(`did: ${auth.did}`);
-      console.log("accessJwt:", auth.accessJwt);
-      return c.json(await oneyearagoPosts(auth));
   }
 });
 

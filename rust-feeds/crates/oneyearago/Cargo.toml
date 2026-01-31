@@ -1,0 +1,22 @@
+[package]
+name = "oneyearago"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+regex = "1.10"
+tokio = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+atrium-api = { workspace = true }
+async-trait = "0.1.89"
+
+[dependencies.models]
+path = "../../crates/models"
+
+[dev-dependencies]
+mockall = "0.14.0"

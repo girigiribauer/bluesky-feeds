@@ -4,6 +4,7 @@ members = [
     "crates/jetstream",
     "crates/helloworld",
     "crates/todoapp",
+    "crates/oneyearago",
 ]
 resolver = "2"
 
@@ -47,6 +48,7 @@ models = { path = "crates/models" }
 jetstream = { path = "crates/jetstream" }
 helloworld = { path = "crates/helloworld" }
 todoapp = { path = "crates/todoapp" }
+oneyearago = { path = "crates/oneyearago" }
 jetstream-oxide = { workspace = true }
 atrium-api = { workspace = true }
 tokio-util = { workspace = true }
