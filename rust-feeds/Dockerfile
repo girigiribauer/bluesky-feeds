@@ -1,36 +1,35 @@
-# ビルドステージ
-FROM rustlang/rust:nightly-slim AS builder
-
+# Base stage for common tools
+FROM rustlang/rust:nightly-slim AS chef
 WORKDIR /build
-
+RUN cargo install cargo-chef
 RUN apt-get update && \
     apt-get install -y pkg-config libssl-dev perl make && \
     rm -rf /var/lib/apt/lists/*
 
-
-# 依存関係のキャッシュ用にダミープロジェクトをビルド
-COPY Cargo.toml Cargo.lock ./
-COPY crates/models/Cargo.toml ./crates/models/Cargo.toml
-COPY crates/jetstream/Cargo.toml ./crates/jetstream/Cargo.toml
-COPY crates/helloworld/Cargo.toml ./crates/helloworld/Cargo.toml
-COPY crates/todoapp/Cargo.toml ./crates/todoapp/Cargo.toml
-RUN mkdir -p src crates/models/src crates/jetstream/src crates/helloworld/src crates/todoapp/src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > crates/models/src/lib.rs && \
-    echo "pub fn dummy() {}" > crates/jetstream/src/lib.rs && \
-    echo "pub fn dummy() {}" > crates/helloworld/src/lib.rs && \
-    echo "pub fn dummy() {}" > crates/todoapp/src/lib.rs && \
-    cargo build --release && \
-    rm -rf src crates
-
-# 実際のソースコードをコピーしてビルド
+# Stage 1: Planner
+# Computes a lock-like file for the project (recipe.json)
+FROM chef AS planner
 COPY . .
-# タイムスタンプを更新して再ビルドを強制する
-RUN touch src/main.rs crates/models/src/lib.rs crates/jetstream/src/lib.rs crates/helloworld/src/lib.rs crates/todoapp/src/lib.rs
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 2: Cacher
+# Builds dependencies based on the recipe
+FROM chef AS cacher
+COPY --from=planner /build/recipe.json recipe.json
+# Build dependencies - this is the cached layer
+RUN cargo chef cook --release --recipe-path recipe.json
+
+# Stage 3: Builder
+# Builds the actual application
+FROM chef AS builder
+COPY . .
+# Copy over the cached dependencies
+COPY --from=cacher /build/target target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
 RUN cargo build --release
 
-# ランタイムステージ
-FROM debian:trixie-slim
+# Stage 4: Runtime
+FROM debian:trixie-slim AS runtime
 
 RUN apt-get update && \
     apt-get install -y ca-certificates && \
