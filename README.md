@@ -21,9 +21,14 @@ npm install
 npm run dev
 ```
 
-## 公開・取り消しする
+## 公開・取り消しする (Rust)
 
+```bash
+cd rust-feeds
+# 公開・更新
+cargo run --bin publish_feed <feed_id>
+# 削除
+cargo run --bin unpublish_feed <feed_id>
 ```
-npm run publish
-npm run unpublish
-```
+
+例: `cargo run --bin publish_feed oneyearago`

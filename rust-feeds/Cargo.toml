@@ -55,4 +55,6 @@ tokio-util = { workspace = true }
 futures-util = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
+chrono = { workspace = true }
+dotenv = "0.15"
 
