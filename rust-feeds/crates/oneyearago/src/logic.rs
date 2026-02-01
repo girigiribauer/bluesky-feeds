@@ -9,14 +9,14 @@ const DEFAULT_LIMIT: usize = 30;
 pub async fn fetch_posts_from_past<F: PostFetcher>(
     fetcher: &F,
     service_token: &str,
-    user_token: &str,
+    _user_token: &str,
     actor: &str,
     limit: usize,
     cursor: Option<String>,
     now_utc: Option<chrono::DateTime<Utc>>, // Injectable "now"
 ) -> Result<(Vec<FeedItem>, Option<String>)> {
     // 1. Timezone
-    let tz_offset = fetcher.determine_timezone(actor, user_token).await?;
+    let tz_offset = fetcher.determine_timezone(actor, service_token).await?;
 
     // 現在時刻 (UTC) -> ターゲットタイムゾーンへ変換
     let now_utc = now_utc.unwrap_or_else(Utc::now);
