@@ -39,3 +39,14 @@ impl FeedService {
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DescribeFeedGeneratorResponse {
+    pub did: String,
+    pub feeds: Vec<FeedUri>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FeedUri {
+    pub uri: String,
+}

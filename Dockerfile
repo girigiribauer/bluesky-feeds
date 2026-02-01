@@ -1,5 +1,5 @@
 # Base stage for common tools
-FROM rustlang/rust:nightly-slim AS chef
+FROM rust:slim-bookworm AS chef
 WORKDIR /build
 RUN cargo install cargo-chef
 RUN apt-get update && \
@@ -37,7 +37,7 @@ RUN apt-get update && \
 
 COPY --from=builder /build/target/release/bluesky-feeds /usr/local/bin/app
 
-ENV PORT=3001
-EXPOSE 3001
+ENV PORT=3000
+EXPOSE 3000
 
 CMD ["/usr/local/bin/app"]

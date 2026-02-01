@@ -37,4 +37,5 @@ pub struct JwtPayload {
 pub struct SessionResponse {
     #[serde(rename = "accessJwt")]
     pub access_jwt: String,
+    pub did: String,
 }

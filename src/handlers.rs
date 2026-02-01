@@ -7,7 +7,7 @@ use axum::{
 use models::FeedService;
 
 pub async fn root() -> &'static str {
-    "Rust Bluesky Feed Generator"
+    "お試しで Bluesky のフィードを作っています https://github.com/girigiribauer/bluesky-feeds"
 }
 
 pub async fn get_feed_skeleton(
@@ -64,11 +64,12 @@ pub async fn get_feed_skeleton(
                         // RE-AUTHENTICATION LOGIC
                         if !handle.is_empty() && !password.is_empty() {
                             match todoapp::authenticate(&client, &handle, &password).await {
-                                Ok(new_token) => {
-                                    tracing::info!("Token refresh successful");
+                                Ok((new_token, new_did)) => {
+                                    tracing::info!("Token refresh successful (DID: {})", new_did);
                                     // Update state with new token (Write Lock)
                                     if let Ok(mut lock) = state.write() {
                                         lock.service_token = Some(new_token.clone());
+                                        lock.service_did = Some(new_did);
                                     }
 
                                     // Retry request with new token
@@ -127,11 +128,12 @@ pub async fn get_feed_skeleton(
                          // RE-AUTHENTICATION LOGIC
                         if !handle.is_empty() && !password.is_empty() {
                             match todoapp::authenticate(&client, &handle, &password).await {
-                                Ok(new_token) => {
-                                    tracing::info!("Token refresh successful");
+                                Ok((new_token, new_did)) => {
+                                    tracing::info!("Token refresh successful (DID: {})", new_did);
                                     // Update state with new token (Write Lock)
                                     if let Ok(mut lock) = state.write() {
                                         lock.service_token = Some(new_token.clone());
+                                        lock.service_did = Some(new_did);
                                     }
 
                                     // Retry request with new token
@@ -160,4 +162,34 @@ pub async fn get_feed_skeleton(
             }
         }
     }
+}
+
+pub async fn describe_feed_generator(
+    State(state): State<SharedState>,
+) -> Result<Json<models::DescribeFeedGeneratorResponse>, (StatusCode, String)> {
+    let (did, _service_did) = if let Ok(lock) = state.read() {
+        // Authenticated Service DID (from .env/auth) or default from context if we hardcoded it?
+        // Ideally we use the authenticated DID.
+        let did = lock.service_did.clone().ok_or((
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Service not authenticated yet".to_string(),
+        ))?;
+        (did.clone(), did) // logic::service_did
+    } else {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
+    };
+
+    let feeds = vec![
+        models::FeedUri {
+            uri: format!("at://{}/app.bsky.feed.generator/helloworld", did),
+        },
+        models::FeedUri {
+            uri: format!("at://{}/app.bsky.feed.generator/todoapp", did),
+        },
+        models::FeedUri {
+            uri: format!("at://{}/app.bsky.feed.generator/oneyearago", did),
+        },
+    ];
+
+    Ok(Json(models::DescribeFeedGeneratorResponse { did, feeds }))
 }

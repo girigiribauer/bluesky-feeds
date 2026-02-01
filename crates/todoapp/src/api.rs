@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 
-pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Result<String> {
+pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Result<(String, String)> {
     let url = "https://bsky.social/xrpc/com.atproto.server.createSession";
     let body = serde_json::json!({
         "identifier": handle,
@@ -24,7 +24,7 @@ pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Resu
     }
 
     let session: SessionResponse = res.json().await.context("Failed to parse auth response")?;
-    Ok(session.access_jwt)
+    Ok((session.access_jwt, session.did))
 }
 
 pub async fn search_posts(client: &Client, q: &str, author_did: &str, service_token: &str) -> Result<Vec<PostView>> {

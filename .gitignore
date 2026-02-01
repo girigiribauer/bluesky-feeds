@@ -1,19 +1,12 @@
-# deps
-node_modules/
-.npmrc
+# Rust
+target/
+**/*.rs.bk
 
-# env
+# Env
 .env
 .env.production
 
-# logs
-logs/
-*.log
-npm-debug.log*
-
-# misc
+# Misc
 .DS_Store
+*.log
 
-# build
-dist/
-*.tsbuildinfo

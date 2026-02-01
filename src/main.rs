@@ -32,13 +32,15 @@ async fn main() {
     let handle = std::env::var("APP_HANDLE").unwrap_or_default();
     let password = std::env::var("APP_PASSWORD").unwrap_or_default();
     let mut service_token = None;
+    let mut service_did = None;
 
     if !handle.is_empty() && !password.is_empty() {
         tracing::info!("Authenticating as {}...", handle);
         match todoapp::authenticate(&client, &handle, &password).await {
-            Ok(token) => {
-                tracing::info!("Successfully authenticated with Bluesky");
+            Ok((token, did)) => {
+                tracing::info!("Successfully authenticated with Bluesky (DID: {})", did);
                 service_token = Some(token);
+                service_did = Some(did);
             }
             Err(e) => {
                 tracing::error!("Failed to authenticate with Bluesky: {}. Search API will fail.", e);
@@ -52,6 +54,7 @@ async fn main() {
         helloworld: helloworld::State::default(),
         http_client: client,
         service_token,
+        service_did,
         auth_handle: handle,
         auth_password: password,
     }));
@@ -73,13 +76,14 @@ async fn main() {
     let app = Router::new()
         .route("/", get(handlers::root))
         .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(handlers::get_feed_skeleton))
+        .route("/xrpc/app.bsky.feed.describeFeedGenerator", get(handlers::describe_feed_generator))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     let port = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(3001);
+        .unwrap_or(3000);
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
 
     println!("Attempting to bind/listen on {}", addr);
