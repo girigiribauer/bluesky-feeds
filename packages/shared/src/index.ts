@@ -33,7 +33,8 @@ export const AVAILABLE_FEED_SERVICES: FeedService[] = [
   {
     service: "helloworld",
     displayName: "Helloworld feed",
-    description: "Hello! Hello!",
+    description: "固定投稿と hello world 投稿のテスト",
+    avatar: "assets/helloworld.png",
   },
   {
     service: "todoapp",
