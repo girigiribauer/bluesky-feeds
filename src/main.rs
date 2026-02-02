@@ -77,6 +77,7 @@ async fn main() {
         .route("/", get(handlers::root))
         .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(handlers::get_feed_skeleton))
         .route("/xrpc/app.bsky.feed.describeFeedGenerator", get(handlers::describe_feed_generator))
+        .route("/.well-known/did.json", get(handlers::get_did_json))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

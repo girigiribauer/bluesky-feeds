@@ -193,3 +193,48 @@ pub async fn describe_feed_generator(
 
     Ok(Json(models::DescribeFeedGeneratorResponse { did, feeds }))
 }
+
+#[derive(serde::Serialize)]
+pub struct DidResponse {
+    #[serde(rename = "@context")]
+    pub context: Vec<String>,
+    pub id: String,
+    pub service: Vec<DidService>,
+}
+
+#[derive(serde::Serialize)]
+pub struct DidService {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub service_type: String,
+    #[serde(rename = "serviceEndpoint")]
+    pub service_endpoint: String,
+}
+
+pub async fn get_did_json(
+    State(state): State<SharedState>,
+) -> Result<Json<DidResponse>, (StatusCode, String)> {
+    let handle = if let Ok(lock) = state.read() {
+        if lock.auth_handle.is_empty() {
+             return Err((StatusCode::SERVICE_UNAVAILABLE, "Service handle not configured".to_string()));
+        }
+        lock.auth_handle.clone()
+    } else {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
+    };
+
+    let did = format!("did:web:{}", handle);
+    let service_endpoint = format!("https://{}", handle);
+
+    let response = DidResponse {
+        context: vec!["https://www.w3.org/ns/did/v1".to_string()],
+        id: did,
+        service: vec![DidService {
+            id: "#bsky_fg".to_string(),
+            service_type: "BskyFeedGenerator".to_string(),
+            service_endpoint,
+        }],
+    };
+
+    Ok(Json(response))
+}
