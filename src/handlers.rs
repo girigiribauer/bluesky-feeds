@@ -212,19 +212,12 @@ pub struct DidService {
 }
 
 pub async fn get_did_json(
-    State(state): State<SharedState>,
+    State(_state): State<SharedState>,
 ) -> Result<Json<DidResponse>, (StatusCode, String)> {
-    let handle = if let Ok(lock) = state.read() {
-        if lock.auth_handle.is_empty() {
-             return Err((StatusCode::SERVICE_UNAVAILABLE, "Service handle not configured".to_string()));
-        }
-        lock.auth_handle.clone()
-    } else {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
-    };
+    let hostname = "feeds.bsky.girigiribauer.com";
 
-    let did = format!("did:web:{}", handle);
-    let service_endpoint = format!("https://{}", handle);
+    let did = format!("did:web:{}", hostname);
+    let service_endpoint = format!("https://{}", hostname);
 
     let response = DidResponse {
         context: vec!["https://www.w3.org/ns/did/v1".to_string()],
