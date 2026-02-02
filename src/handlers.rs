@@ -27,6 +27,11 @@ pub async fn get_feed_skeleton(
 
     match service {
         FeedService::Helloworld => {
+            let _auth_header = headers
+                .get("authorization")
+                .and_then(|h| h.to_str().ok())
+                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
+
             if let Ok(lock) = state.read() {
                 Ok(Json(helloworld::get_feed_skeleton(
                     &lock.helloworld,
@@ -230,4 +235,8 @@ pub async fn get_did_json(
     };
 
     Ok(Json(response))
+}
+
+pub async fn health() -> &'static str {
+    "OK"
 }

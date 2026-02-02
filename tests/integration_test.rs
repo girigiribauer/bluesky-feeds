@@ -1,0 +1,155 @@
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use bluesky_feeds::{app, state::{AppState, SharedState}};
+use helloworld;
+use reqwest;
+use serde_json::Value;
+use std::sync::{Arc, RwLock};
+use tower::util::ServiceExt;
+
+fn create_test_state() -> SharedState {
+    Arc::new(RwLock::new(AppState {
+        helloworld: helloworld::State::default(),
+        http_client: reqwest::Client::new(),
+        service_token: None,
+        service_did: None,
+        auth_handle: "test.example.com".to_string(),
+        auth_password: "dummy".to_string(),
+    }))
+}
+
+/// ヘルスチェック: /health が 200 OK を返すか検証
+#[tokio::test]
+async fn test_health_check() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&body_bytes[..], b"OK");
+}
+
+/// DID認証情報: /.well-known/did.json が正しい構造とIDを返すか検証
+#[tokio::test]
+async fn test_did_json_response() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/.well-known/did.json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_json: Value = serde_json::from_slice(&body_bytes).unwrap();
+
+    assert_eq!(body_json["id"], "did:web:feeds.bsky.girigiribauer.com");
+
+    let services = body_json["service"].as_array().unwrap();
+    let first_service = &services[0];
+    assert_eq!(first_service["serviceEndpoint"], "https://feeds.bsky.girigiribauer.com");
+}
+
+/// フィード取得(異常系): 認証ヘッダーがない場合に 401 Unauthorized を返すか検証
+#[tokio::test]
+async fn test_feed_skeleton_missing_auth() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:123/app.bsky.feed.generator/helloworld")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// フィード取得(異常系): 必須パラメータ(feed)が不足している場合に 400 Bad Request を返すか検証
+#[tokio::test]
+async fn test_feed_skeleton_missing_param() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton") // Missing ?feed=...
+                .header("Authorization", "Bearer dummy_token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// フィード取得(異常系): 存在しないフィード名を指定した場合に 404 Not Found を返すか検証
+#[tokio::test]
+async fn test_feed_skeleton_unknown_feed() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:123/app.bsky.feed.generator/unknown_feed")
+                .header("Authorization", "Bearer dummy_token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// フィード取得(正常系): helloworld フィードが正常に取得できるか検証
+#[tokio::test]
+async fn test_feed_skeleton_helloworld_success() {
+    let state = create_test_state();
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:123/app.bsky.feed.generator/helloworld")
+                .header("Authorization", "Bearer dummy_token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_json: Value = serde_json::from_slice(&body_bytes).expect("Failed to parse JSON response");
+
+    assert!(body_json["feed"].is_array());
+}

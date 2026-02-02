@@ -1,11 +1,7 @@
-mod handlers;
-mod state;
-
-use axum::{routing::get, Router};
-use state::{AppState, SharedState};
+use bluesky_feeds::state::{AppState, SharedState};
+use bluesky_feeds::app;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -47,7 +43,14 @@ async fn main() {
             }
         }
     } else {
-        tracing::warn!("APP_HANDLE or APP_PASSWORD not set. Search API will fail.");
+        tracing::error!("APP_HANDLE or APP_PASSWORD not set. Application cannot function correctly.");
+        // Prevent tight restart loop
+        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        panic!("Missing required configuration: APP_HANDLE or APP_PASSWORD");
+    }
+
+    if handle != "feeds.bsky.girigiribauer.com" && !handle.is_empty() {
+        tracing::warn!("CAUTION: APP_HANDLE ({}) does not match production host (feeds.bsky.girigiribauer.com). specific functionality like did.json might be incorrect if this is production.", handle);
     }
 
     let state: SharedState = Arc::new(RwLock::new(AppState {
@@ -73,13 +76,7 @@ async fn main() {
         }
     });
 
-    let app = Router::new()
-        .route("/", get(handlers::root))
-        .route("/xrpc/app.bsky.feed.getFeedSkeleton", get(handlers::get_feed_skeleton))
-        .route("/xrpc/app.bsky.feed.describeFeedGenerator", get(handlers::describe_feed_generator))
-        .route("/.well-known/did.json", get(handlers::get_did_json))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    let app = app(state);
 
     let port = std::env::var("PORT")
         .ok()
