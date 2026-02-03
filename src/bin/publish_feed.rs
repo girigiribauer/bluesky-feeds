@@ -95,7 +95,7 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
         service: "fakebluesky",
         display_name: "Fake Bluesky",
         description: "Fake Bluesky feed\n\nBluesky と言いながら実は青空の写真ではないフィード",
-        avatar: None,
+        avatar: Some("assets/fakebluesky.png"),
     },
 ];
 
