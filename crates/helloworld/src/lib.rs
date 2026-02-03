@@ -67,7 +67,7 @@ pub async fn get_feed_skeleton(
     // Fixed pinned post at the top for first page
     if cursor.is_none() {
         feed.push(FeedItem {
-            post: "at://did:plc:oky5czdrnfjpqslsw2a5iclo/app.bsky.feed.post/3jhprg4xfc22f"
+            post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldy6oad3vk27"
                 .to_string(),
         });
         tracing::info!("Added pinned post to feed (first page)");
