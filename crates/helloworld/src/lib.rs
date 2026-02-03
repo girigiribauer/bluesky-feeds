@@ -73,13 +73,20 @@ pub async fn get_feed_skeleton(
         });
     }
 
-    let cursor_val = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(i64::MAX);
+    let cursor_val = cursor.as_ref().and_then(|c| c.parse::<i64>().ok()).unwrap_or(i64::MAX);
+
+    // Adjust limit to account for pinned post on first page
+    let db_limit = if cursor.is_none() {
+        (limit - 1).max(1) // Reserve 1 slot for pinned post
+    } else {
+        limit
+    };
 
     let rows_result = sqlx::query(
         "SELECT uri, indexed_at FROM helloworld_posts WHERE indexed_at < ? ORDER BY indexed_at DESC LIMIT ?"
     )
     .bind(cursor_val)
-    .bind(limit as i64)
+    .bind(db_limit as i64)
     .fetch_all(pool)
     .await;
 
