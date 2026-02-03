@@ -2,15 +2,14 @@ pub mod api;
 pub mod logic;
 mod timezone;
 
+use crate::api::BlueskyFetcher;
 use anyhow::Result;
 use models::FeedSkeletonResult;
 use reqwest::Client;
-use crate::api::BlueskyFetcher;
 
 pub async fn get_feed_skeleton(
     client: &Client,
-    #[allow(unused_variables)]
-    auth_header: &str,
+    #[allow(unused_variables)] auth_header: &str,
     service_token: &str,
     actor: &str,
     limit: usize,
@@ -24,8 +23,9 @@ pub async fn get_feed_skeleton(
         actor,
         limit,
         cursor,
-        None
-    ).await?;
+        None,
+    )
+    .await?;
 
     Ok(FeedSkeletonResult {
         cursor: next_cursor,

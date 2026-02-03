@@ -41,11 +41,16 @@ async fn main() -> Result<()> {
     let target_service = &args[1];
 
     if !AVAILABLE_SERVICES.contains(&target_service.as_str()) {
-        eprintln!("Warning: '{}' is not in the known service list. Proceeding anyway...", target_service);
+        eprintln!(
+            "Warning: '{}' is not in the known service list. Proceeding anyway...",
+            target_service
+        );
     }
 
-    let handle = env::var("APP_HANDLE").context("APP_HANDLE not set in .env (checked current and parent directories)")?;
-    let password = env::var("APP_PASSWORD").context("APP_PASSWORD not set in .env (checked current and parent directories)")?;
+    let handle = env::var("APP_HANDLE")
+        .context("APP_HANDLE not set in .env (checked current and parent directories)")?;
+    let password = env::var("APP_PASSWORD")
+        .context("APP_PASSWORD not set in .env (checked current and parent directories)")?;
 
     let client = ClientBuilder::new().build()?;
 
@@ -60,9 +65,17 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn create_session(client: &Client, identifier: &str, password: &str) -> Result<CreateSessionResponse> {
-    let res = client.post("https://bsky.social/xrpc/com.atproto.server.createSession")
-        .json(&CreateSessionRequest { identifier, password })
+async fn create_session(
+    client: &Client,
+    identifier: &str,
+    password: &str,
+) -> Result<CreateSessionResponse> {
+    let res = client
+        .post("https://bsky.social/xrpc/com.atproto.server.createSession")
+        .json(&CreateSessionRequest {
+            identifier,
+            password,
+        })
         .send()
         .await?
         .error_for_status()?;
@@ -77,7 +90,8 @@ async fn delete_record(client: &Client, token: &str, repo: &str, rkey: &str) -> 
         rkey: rkey.to_string(),
     };
 
-    client.post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord")
+    client
+        .post("https://bsky.social/xrpc/com.atproto.repo.deleteRecord")
         .header("Authorization", format!("Bearer {}", token))
         .json(&req)
         .send()

@@ -31,7 +31,11 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
         let parts: Vec<&str> = c.splitn(3, "::").collect();
         if parts.len() >= 2 && parts[0] == "v1" {
             let y = parts[1].parse::<i32>().unwrap_or(1);
-            let ac = if parts.len() > 2 && !parts[2].is_empty() { Some(parts[2].to_string()) } else { None };
+            let ac = if parts.len() > 2 && !parts[2].is_empty() {
+                Some(parts[2].to_string())
+            } else {
+                None
+            };
             (y, ac)
         } else {
             (1, None)
@@ -45,9 +49,9 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
         if feed_items.len() >= safe_limit {
             // Succeeded filling limit. Calculate resumption cursor.
             if let Some(ac) = current_api_cursor {
-                 break Some(format!("v1::{}::{}", years_ago, ac));
+                break Some(format!("v1::{}::{}", years_ago, ac));
             } else {
-                 break Some(format!("v1::{}::", years_ago));
+                break Some(format!("v1::{}::", years_ago));
             }
         }
 
@@ -64,13 +68,16 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
             .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(target_year, 2, 28).unwrap());
 
         // Start: 00:00:00 user time
-        let start_local = target_date.and_hms_opt(0, 0, 0).unwrap()
+        let start_local = target_date
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .and_local_timezone(tz_offset)
             .unwrap();
 
         // End: Next day 00:00:00 user time (exclusive)
         let end_local = (target_date + chrono::Duration::days(1))
-            .and_hms_opt(0, 0, 0).unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
             .and_local_timezone(tz_offset)
             .unwrap();
 
@@ -79,8 +86,18 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
         let until = end_local.with_timezone(&Utc).to_rfc3339();
 
         let fetch_limit = safe_limit - feed_items.len();
-        match fetcher.search_posts(service_token, actor, &since, &until, fetch_limit, current_api_cursor.clone()).await {
-             Ok((posts, new_cursor)) => {
+        match fetcher
+            .search_posts(
+                service_token,
+                actor,
+                &since,
+                &until,
+                fetch_limit,
+                current_api_cursor.clone(),
+            )
+            .await
+        {
+            Ok((posts, new_cursor)) => {
                 for p in posts {
                     feed_items.push(FeedItem { post: p.uri });
                 }
@@ -107,9 +124,9 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::{PostView, PostRecord};
-    use mockall::predicate::*;
+    use crate::api::{PostRecord, PostView};
     use mockall::mock;
+    use mockall::predicate::*;
 
     mock! {
         pub PostFetcher {}
@@ -133,16 +150,29 @@ mod tests {
     #[tokio::test]
     async fn test_waterfall_single_year_sufficient() {
         let mut mock = MockPostFetcher::new();
-        mock.expect_determine_timezone().returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
 
         // 1年前: 30件要求に対し、30件返却。カーソルも "cursor_abc" が返るとする
         mock.expect_search_posts()
             .times(1)
-            .with(eq("token"), eq("did:plc:test"), always(), always(), eq(30), eq(None))
+            .with(
+                eq("token"),
+                eq("did:plc:test"),
+                always(),
+                always(),
+                eq(30),
+                eq(None),
+            )
             .returning(|_, _, _, _, _, _| {
-                 let mut posts = Vec::new();
+                let mut posts = Vec::new();
                 for i in 0..30 {
-                    posts.push(PostView { uri: format!("id:{}", i), record: PostRecord { created_at: String::new() }});
+                    posts.push(PostView {
+                        uri: format!("id:{}", i),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    });
                 }
                 Ok((posts, Some("cursor_abc".to_string())))
             });
@@ -150,7 +180,10 @@ mod tests {
         // Loop checks limits. feed_items=30 >= limit 30. Break.
         // Return next cursor: v1::1::cursor_abc
 
-        let (items, cursor) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None).await.unwrap();
+        let (items, cursor) =
+            fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None)
+                .await
+                .unwrap();
         assert_eq!(items.len(), 30);
         assert_eq!(cursor, Some("v1::1::cursor_abc".to_string()));
     }
@@ -165,11 +198,23 @@ mod tests {
         // 1年前: 10件しか見つからない。Cursor=None (この年は終わり)
         mock.expect_search_posts()
             .times(1)
-            .with(eq("token"), eq("did:plc:test"), always(), always(), eq(30), eq(None))
+            .with(
+                eq("token"),
+                eq("did:plc:test"),
+                always(),
+                always(),
+                eq(30),
+                eq(None),
+            )
             .returning(|_, _, _, _, _, _| {
                 let mut posts = Vec::new();
                 for i in 0..10 {
-                    posts.push(PostView { uri: format!("year1:{}", i), record: PostRecord { created_at: String::new() }});
+                    posts.push(PostView {
+                        uri: format!("year1:{}", i),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    });
                 }
                 Ok((posts, None))
             });
@@ -179,11 +224,23 @@ mod tests {
         // 2年前: 残りの20件を要求。Cursor=None (この年も終わり)
         mock.expect_search_posts()
             .times(1)
-            .with(eq("token"), eq("did:plc:test"), always(), always(), eq(20), eq(None))
+            .with(
+                eq("token"),
+                eq("did:plc:test"),
+                always(),
+                always(),
+                eq(20),
+                eq(None),
+            )
             .returning(|_, _, _, _, _, _| {
                 let mut posts = Vec::new();
                 for i in 0..20 {
-                     posts.push(PostView { uri: format!("year2:{}", i), record: PostRecord { created_at: String::new() }});
+                    posts.push(PostView {
+                        uri: format!("year2:{}", i),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    });
                 }
                 Ok((posts, None))
             });
@@ -198,7 +255,10 @@ mod tests {
         // Loop start. feed_items(30) >= 30. Break.
         // Resumption logic: current_api_cursor is None. Next cursor = v1::3::
 
-        let (items, cursor) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None).await.unwrap();
+        let (items, cursor) =
+            fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None)
+                .await
+                .unwrap();
 
         assert_eq!(items.len(), 30);
         assert_eq!(items[0].post, "year1:0");
@@ -210,16 +270,29 @@ mod tests {
     #[tokio::test]
     async fn test_waterfall_stops_at_service_launch() {
         let mut mock = MockPostFetcher::new();
-        mock.expect_determine_timezone().returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
 
-        let now = "2025-01-01T00:00:00Z".parse::<chrono::DateTime<Utc>>().unwrap();
+        let now = "2025-01-01T00:00:00Z"
+            .parse::<chrono::DateTime<Utc>>()
+            .unwrap();
 
         // 1年前(2024), 2年前(2023) called. Both empty.
         mock.expect_search_posts()
             .times(2)
             .returning(|_, _, _, _, _, _| Ok((vec![], None)));
 
-        let (items, cursor) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, Some(now)).await.unwrap();
+        let (items, cursor) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "user_token",
+            "did:plc:test",
+            30,
+            None,
+            Some(now),
+        )
+        .await
+        .unwrap();
         assert_eq!(items.len(), 0);
         assert!(cursor.is_none());
     }
@@ -228,7 +301,8 @@ mod tests {
     #[tokio::test]
     async fn test_resume_from_cursor_same_year() {
         let mut mock = MockPostFetcher::new();
-        mock.expect_determine_timezone().returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
 
         // Input cursor: "v1::1::cursor_123" (1年前の cursor_123 から再開)
         let input_cursor = Some("v1::1::cursor_123".to_string());
@@ -242,15 +316,30 @@ mod tests {
                 always(),
                 always(),
                 always(),
-                eq(Some("cursor_123".to_string())) // IMPORTANT: Expecting the extracted cursor
+                eq(Some("cursor_123".to_string())), // IMPORTANT: Expecting the extracted cursor
             )
             .returning(|_, _, _, _, _, _| {
                 // Return 1 item, new cursor "cursor_456"
-                let posts = vec![PostView { uri: "resumed:1".to_string(), record: PostRecord { created_at: String::new() }}];
+                let posts = vec![PostView {
+                    uri: "resumed:1".to_string(),
+                    record: PostRecord {
+                        created_at: String::new(),
+                    },
+                }];
                 Ok((posts, Some("cursor_456".to_string())))
             });
 
-        let (items, next_cursor) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 1, input_cursor, None).await.unwrap();
+        let (items, next_cursor) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "user_token",
+            "did:plc:test",
+            1,
+            input_cursor,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].post, "resumed:1");
@@ -261,7 +350,8 @@ mod tests {
     #[tokio::test]
     async fn test_resume_from_cursor_next_year() {
         let mut mock = MockPostFetcher::new();
-        mock.expect_determine_timezone().returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
 
         // Input cursor: "v1::2::" (2年前の頭から。APIカーソルは空)
         let input_cursor = Some("v1::2::".to_string());
@@ -275,14 +365,29 @@ mod tests {
                 always(), // since/until checks implied by skipping logic, usually mock is called once
                 always(),
                 always(),
-                eq(None) // API cursor should be None (start of year)
+                eq(None), // API cursor should be None (start of year)
             )
             .returning(|_, _, _, _, _, _| {
-                 let posts = vec![PostView { uri: "year2:1".to_string(), record: PostRecord { created_at: String::new() }}];
-                 Ok((posts, None))
+                let posts = vec![PostView {
+                    uri: "year2:1".to_string(),
+                    record: PostRecord {
+                        created_at: String::new(),
+                    },
+                }];
+                Ok((posts, None))
             });
 
-        let (items, _) = fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 1, input_cursor, None).await.unwrap();
+        let (items, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "user_token",
+            "did:plc:test",
+            1,
+            input_cursor,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].post, "year2:1");
@@ -290,5 +395,5 @@ mod tests {
 
     /*
     // 観点4: 日付境界 (省略 - ロジックは同じだが設定が面倒なため、他のテストでカバー)
-    */
+     */
 }

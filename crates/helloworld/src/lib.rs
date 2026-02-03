@@ -1,8 +1,8 @@
-use models::{FeedItem, FeedSkeletonResult};
-use jetstream_oxide::events::commit::CommitEvent;
 use atrium_api::record::KnownRecord;
-use sqlx::{SqlitePool, Row};
+use jetstream_oxide::events::commit::CommitEvent;
+use models::{FeedItem, FeedSkeletonResult};
 use regex::Regex;
+use sqlx::{Row, SqlitePool};
 use std::sync::OnceLock;
 
 static HELLO_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -16,9 +16,7 @@ pub struct State {}
 /// - 大文字小文字を区別しない
 /// - "hello" と "world" の間にカンマやスペースが0個以上あることを許容
 pub fn matches_hello_world(text: &str) -> bool {
-    let regex = HELLO_REGEX.get_or_init(|| {
-        Regex::new(r"(?i)hello[,\s]*world").unwrap()
-    });
+    let regex = HELLO_REGEX.get_or_init(|| Regex::new(r"(?i)hello[,\s]*world").unwrap());
     regex.is_match(text)
 }
 
@@ -67,15 +65,18 @@ pub async fn get_feed_skeleton(
     let mut feed = Vec::new();
 
     // Fixed pinned post at the top for first page
-    // Testing with @bsky.app's old post to verify if age is the issue
     if cursor.is_none() {
         feed.push(FeedItem {
-            post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3jt5hq2ft2s2g".to_string(),
+            post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3jt5hq2ft2s2g"
+                .to_string(),
         });
         tracing::info!("Added pinned post to feed (first page)");
     }
 
-    let cursor_val = cursor.as_ref().and_then(|c| c.parse::<i64>().ok()).unwrap_or(i64::MAX);
+    let cursor_val = cursor
+        .as_ref()
+        .and_then(|c| c.parse::<i64>().ok())
+        .unwrap_or(i64::MAX);
 
     // Adjust limit to account for pinned post on first page
     let db_limit = if cursor.is_none() {
@@ -111,7 +112,11 @@ pub async fn get_feed_skeleton(
         }
     }
 
-    tracing::info!("Returning feed with {} items (cursor: {:?})", feed.len(), next_cursor);
+    tracing::info!(
+        "Returning feed with {} items (cursor: {:?})",
+        feed.len(),
+        next_cursor
+    );
 
     FeedSkeletonResult {
         cursor: next_cursor,
@@ -165,9 +170,11 @@ mod tests {
         migrate(&pool).await.unwrap();
 
         // Verify table exists by querying it
-        let result = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='helloworld_posts'")
-            .fetch_one(&pool)
-            .await;
+        let result = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='helloworld_posts'",
+        )
+        .fetch_one(&pool)
+        .await;
 
         assert!(result.is_ok());
     }

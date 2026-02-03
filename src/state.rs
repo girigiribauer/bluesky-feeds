@@ -1,7 +1,7 @@
 use serde::Deserialize;
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use sqlx::SqlitePool;
 
 #[derive(Debug, Deserialize)]
 pub struct FeedQuery {

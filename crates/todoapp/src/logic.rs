@@ -53,7 +53,10 @@ fn is_valid_keyword(text: &str, keyword: &str) -> bool {
     let prefix_chars = text.chars().take(keyword_len);
     let keyword_chars = keyword.chars();
 
-    if !prefix_chars.zip(keyword_chars).all(|(a, b)| a.eq_ignore_ascii_case(&b)) {
+    if !prefix_chars
+        .zip(keyword_chars)
+        .all(|(a, b)| a.eq_ignore_ascii_case(&b))
+    {
         return false;
     }
 
@@ -119,11 +122,20 @@ mod tests {
         assert!(!is_valid_keyword("TODOfeed", "TODO"), "英字続きNG");
 
         // 異常系: 文中にある
-        assert!(!is_valid_keyword("I will do TODO", "TODO"), "文中のTODOはNG");
+        assert!(
+            !is_valid_keyword("I will do TODO", "TODO"),
+            "文中のTODOはNG"
+        );
 
         // 異常系: マルチバイト文字 (Panic回避チェック)
-        assert!(!is_valid_keyword("あいうえお", "TODO"), "日本語開始でもPanicしないこと");
-        assert!(!is_valid_keyword("ＴＯＤＯ", "TODO"), "全角TODOは現状対象外(Panicしない)");
+        assert!(
+            !is_valid_keyword("あいうえお", "TODO"),
+            "日本語開始でもPanicしないこと"
+        );
+        assert!(
+            !is_valid_keyword("ＴＯＤＯ", "TODO"),
+            "全角TODOは現状対象外(Panicしない)"
+        );
     }
 
     struct TestCase {
@@ -151,33 +163,29 @@ mod tests {
             TestCase {
                 name: "基本: 小文字doneでもTODOは消える (Case Insensitive)",
                 todos: vec![create_post("uri:todo1", "TODO task", None)],
-                dones: vec![
-                    create_post("uri:done_lower", "done", Some("uri:todo1")),
-                ],
+                dones: vec![create_post("uri:done_lower", "done", Some("uri:todo1"))],
                 expected_uris: vec![],
             },
             TestCase {
                 name: "修正: 記号付き(done!)でも有効",
                 todos: vec![create_post("uri:todo1", "TODO task", None)],
-                dones: vec![
-                    create_post("uri:done_bang", "done!", Some("uri:todo1")),
-                ],
+                dones: vec![create_post("uri:done_bang", "done!", Some("uri:todo1"))],
                 expected_uris: vec![],
             },
             TestCase {
                 name: "仕様: 単語の一部(todoist)は弾かれる",
-                todos: vec![
-                    create_post("uri:todoist", "todoist is great", None),
-                ],
+                todos: vec![create_post("uri:todoist", "todoist is great", None)],
                 dones: vec![],
                 expected_uris: vec![],
             },
             TestCase {
                 name: "仕様: DONE自体もキーワード判定を通っていないと有効にならない",
                 todos: vec![create_post("uri:todo1", "TODO", None)],
-                dones: vec![
-                    create_post("uri:done_fake", "I have DONE it", Some("uri:todo1")),
-                ],
+                dones: vec![create_post(
+                    "uri:done_fake",
+                    "I have DONE it",
+                    Some("uri:todo1"),
+                )],
                 expected_uris: vec!["uri:todo1"],
             },
             TestCase {
@@ -198,9 +206,7 @@ mod tests {
                     create_post("uri:todo1", "TODO active", None),
                     create_post("uri:todo2", "TODO finished", None),
                 ],
-                dones: vec![
-                    create_post("uri:done2", "DONE", Some("uri:todo2")),
-                ],
+                dones: vec![create_post("uri:done2", "DONE", Some("uri:todo2"))],
                 expected_uris: vec!["uri:todo1"],
             },
         ];
@@ -208,7 +214,11 @@ mod tests {
         for case in cases {
             let result = filter_todos(case.todos, case.dones);
             let result_uris: Vec<String> = result.into_iter().map(|item| item.post).collect();
-            assert_eq!(result_uris, case.expected_uris, "失敗したケース: {}", case.name);
+            assert_eq!(
+                result_uris, case.expected_uris,
+                "失敗したケース: {}",
+                case.name
+            );
         }
     }
 }

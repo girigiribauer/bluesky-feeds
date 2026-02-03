@@ -2,7 +2,10 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use bluesky_feeds::{app, state::{AppState, SharedState}};
+use bluesky_feeds::{
+    app,
+    state::{AppState, SharedState},
+};
 use helloworld;
 use reqwest;
 use serde_json::Value;
@@ -33,7 +36,10 @@ async fn create_test_state() -> SharedState {
     AppState {
         helloworld: helloworld::State::default(),
         http_client: reqwest::Client::new(),
-        service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth { token: None, did: None })),
+        service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
+            token: Some("mock_service_token_for_testing".to_string()),
+            did: Some("did:plc:test123456789".to_string()),
+        })),
         auth_handle: "test.example.com".to_string(),
         auth_password: "dummy".to_string(),
         helloworld_db: db,
@@ -58,7 +64,9 @@ async fn test_health_check() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     assert_eq!(&body_bytes[..], b"OK");
 }
 
@@ -80,14 +88,19 @@ async fn test_did_json_response() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body_json: Value = serde_json::from_slice(&body_bytes).unwrap();
 
     assert_eq!(body_json["id"], "did:web:feeds.bsky.girigiribauer.com");
 
     let services = body_json["service"].as_array().unwrap();
     let first_service = &services[0];
-    assert_eq!(first_service["serviceEndpoint"], "https://feeds.bsky.girigiribauer.com");
+    assert_eq!(
+        first_service["serviceEndpoint"],
+        "https://feeds.bsky.girigiribauer.com"
+    );
 }
 
 /// フィード取得(異常系): 認証ヘッダーがない場合に 401 Unauthorized を返すか検証
@@ -168,8 +181,62 @@ async fn test_feed_skeleton_helloworld_success() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body_json: Value = serde_json::from_slice(&body_bytes).expect("Failed to parse JSON response");
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: Value =
+        serde_json::from_slice(&body_bytes).expect("Failed to parse JSON response");
 
     assert!(body_json["feed"].is_array());
+}
+
+/// 初期認証: create_test_state() で認証トークンが設定されているか検証
+#[tokio::test]
+async fn test_initial_authentication() {
+    let state = create_test_state().await;
+    let auth = state.service_auth.read().await;
+
+    assert!(
+        auth.token.is_some(),
+        "Service auth token should be initialized"
+    );
+    assert!(auth.did.is_some(), "Service auth DID should be initialized");
+}
+
+/// フィード取得(異常系): OneYearAgo フィードが認証なしで 401 を返すか検証
+#[tokio::test]
+async fn test_feed_skeleton_oneyearago_requires_auth() {
+    let state = create_test_state().await;
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:123/app.bsky.feed.generator/oneyearago")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// フィード取得(異常系): TodoApp フィードが認証なしで 401 を返すか検証
+#[tokio::test]
+async fn test_feed_skeleton_todoapp_requires_auth() {
+    let state = create_test_state().await;
+    let app = app(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:123/app.bsky.feed.generator/todoapp")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("Failed to execute request");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

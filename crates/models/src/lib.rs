@@ -22,6 +22,7 @@ pub enum FeedService {
 }
 
 impl FeedService {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "helloworld" => Some(Self::Helloworld),

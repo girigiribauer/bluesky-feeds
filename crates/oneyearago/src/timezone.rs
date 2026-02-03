@@ -29,7 +29,11 @@ fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
 
             let parts: Vec<&str> = s.split(':').collect();
             let hours: i32 = parts[0].parse().unwrap_or(0);
-            let minutes: i32 = if parts.len() > 1 { parts[1].parse().unwrap_or(0) } else { 0 };
+            let minutes: i32 = if parts.len() > 1 {
+                parts[1].parse().unwrap_or(0)
+            } else {
+                0
+            };
 
             let offset_secs = sign * (hours * 3600 + minutes * 60);
             if let Some(offset) = FixedOffset::east_opt(offset_secs) {
@@ -95,25 +99,58 @@ mod tests {
     #[test]
     fn test_timezone_logic() {
         // 1. Explicit Offsets
-        assert_eq!(parse_timezone_description("UTC+9").map(|o| o.local_minus_utc()), Some(9 * 3600));
-        assert_eq!(parse_timezone_description("GMT-5").map(|o| o.local_minus_utc()), Some(-5 * 3600));
-        assert_eq!(parse_timezone_description("Living in UTC+09:00 region").map(|o| o.local_minus_utc()), Some(9 * 3600));
+        assert_eq!(
+            parse_timezone_description("UTC+9").map(|o| o.local_minus_utc()),
+            Some(9 * 3600)
+        );
+        assert_eq!(
+            parse_timezone_description("GMT-5").map(|o| o.local_minus_utc()),
+            Some(-5 * 3600)
+        );
+        assert_eq!(
+            parse_timezone_description("Living in UTC+09:00 region").map(|o| o.local_minus_utc()),
+            Some(9 * 3600)
+        );
 
         // 2. Explicit Keyword
-        assert_eq!(parse_timezone_description("Asia/Tokyo time").map(|o| o.local_minus_utc()), Some(9 * 3600));
+        assert_eq!(
+            parse_timezone_description("Asia/Tokyo time").map(|o| o.local_minus_utc()),
+            Some(9 * 3600)
+        );
 
         // 3. Japanese Content (Hiragana/Katakana) -> JST
-        assert_eq!(parse_timezone_description("こんにちは").map(|o| o.local_minus_utc()), Some(9 * 3600));
-        assert_eq!(parse_timezone_description("エンジニアです").map(|o| o.local_minus_utc()), Some(9 * 3600));
-        assert_eq!(parse_timezone_description("Profile (JP)").map(|o| o.local_minus_utc()), None); // Kanji/Kana absent
+        assert_eq!(
+            parse_timezone_description("こんにちは").map(|o| o.local_minus_utc()),
+            Some(9 * 3600)
+        );
+        assert_eq!(
+            parse_timezone_description("エンジニアです").map(|o| o.local_minus_utc()),
+            Some(9 * 3600)
+        );
+        assert_eq!(
+            parse_timezone_description("Profile (JP)").map(|o| o.local_minus_utc()),
+            None
+        ); // Kanji/Kana absent
 
         // 4. Override (Japanese text but explicit offset) -> Explicit wins
         // Note: Regex order matters. We check offset first.
-        assert_eq!(parse_timezone_description("NY在住 (UTC-5) です").map(|o| o.local_minus_utc()), Some(-5 * 3600));
+        assert_eq!(
+            parse_timezone_description("NY在住 (UTC-5) です").map(|o| o.local_minus_utc()),
+            Some(-5 * 3600)
+        );
 
         // 5. Default (No match)
-        assert_eq!(parse_timezone_description("Hello World").map(|o| o.local_minus_utc()), None);
-        assert_eq!(parse_timezone_description("Tokyo, Japan").map(|o| o.local_minus_utc()), None); // Location intentionally ignored
-        assert_eq!(parse_timezone_description("JST").map(|o| o.local_minus_utc()), None); // Abbr excluded
+        assert_eq!(
+            parse_timezone_description("Hello World").map(|o| o.local_minus_utc()),
+            None
+        );
+        assert_eq!(
+            parse_timezone_description("Tokyo, Japan").map(|o| o.local_minus_utc()),
+            None
+        ); // Location intentionally ignored
+        assert_eq!(
+            parse_timezone_description("JST").map(|o| o.local_minus_utc()),
+            None
+        ); // Abbr excluded
     }
 }

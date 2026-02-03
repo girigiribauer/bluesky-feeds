@@ -1,5 +1,5 @@
-use bluesky_feeds::state::AppState;
 use bluesky_feeds::app;
+use bluesky_feeds::state::AppState;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -11,8 +11,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -30,7 +29,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Initialize Database
-    let database_url = std::env::var("HELLOWORLD_DB_URL").unwrap_or_else(|_| "sqlite:helloworld.db".to_string());
+    let database_url =
+        std::env::var("HELLOWORLD_DB_URL").unwrap_or_else(|_| "sqlite:helloworld.db".to_string());
     tracing::info!("Connecting to database: {}", database_url);
 
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;

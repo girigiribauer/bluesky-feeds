@@ -15,30 +15,35 @@ pub async fn get_feed_skeleton(
     headers: axum::http::HeaderMap,
     Query(params): Query<FeedQuery>,
 ) -> Result<Json<models::FeedSkeletonResult>, (StatusCode, String)> {
-    tracing::info!("Received feed request: {} (cursor={:?}, limit={:?})", params.feed, params.cursor, params.limit);
+    tracing::info!(
+        "Received feed request: {} (cursor={:?}, limit={:?})",
+        params.feed,
+        params.cursor,
+        params.limit
+    );
 
     let feed_name = params
         .feed
         .split('/')
-        .last()
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed param".to_string()))?;
+        .next_back()
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed URI".to_string()))?;
 
-    let service = FeedService::from_str(feed_name).ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
+    let service = FeedService::from_str(feed_name)
+        .ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
 
     match service {
         FeedService::Helloworld => {
             let _auth_header = headers
                 .get("authorization")
                 .and_then(|h| h.to_str().ok())
-                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
+                .ok_or((
+                    StatusCode::UNAUTHORIZED,
+                    "Missing or invalid authorization header".to_string(),
+                ))?;
 
             let pool = state.helloworld_db.clone();
 
-            let skeleton = helloworld::get_feed_skeleton(
-                &pool,
-                params.cursor,
-                params.limit,
-            ).await;
+            let skeleton = helloworld::get_feed_skeleton(&pool, params.cursor, params.limit).await;
 
             Ok(Json(skeleton))
         }
@@ -46,7 +51,10 @@ pub async fn get_feed_skeleton(
             let auth_header = headers
                 .get("authorization")
                 .and_then(|h| h.to_str().ok())
-                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
+                .ok_or((
+                    StatusCode::UNAUTHORIZED,
+                    "Missing or invalid authorization header".to_string(),
+                ))?;
 
             // Read client and current token
             let (client, current_token) = {
@@ -54,7 +62,10 @@ pub async fn get_feed_skeleton(
                 (state.http_client.clone(), auth.token.clone())
             };
 
-            let token = current_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
+            let token = current_token.ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Service not authenticated".to_string(),
+            ))?;
 
             // First attempt
             match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
@@ -62,7 +73,10 @@ pub async fn get_feed_skeleton(
                 Err(e) => {
                     let err_msg = format!("{:?}", e);
                     // Check if error is due to expired token (401 or specific message)
-                    if err_msg.contains("ExpiredToken") || err_msg.contains("401") || err_msg.contains("Unauthorized") {
+                    if err_msg.contains("ExpiredToken")
+                        || err_msg.contains("401")
+                        || err_msg.contains("Unauthorized")
+                    {
                         tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
                         // RE-AUTHENTICATION LOGIC
@@ -81,22 +95,37 @@ pub async fn get_feed_skeleton(
                                     }
 
                                     // Retry request with new token
-                                    match todoapp::get_feed_skeleton(&client, auth_header, &new_token).await {
+                                    match todoapp::get_feed_skeleton(
+                                        &client,
+                                        auth_header,
+                                        &new_token,
+                                    )
+                                    .await
+                                    {
                                         Ok(res) => Ok(Json(res)),
                                         Err(e2) => {
                                             tracing::error!("Retry failed: {:#}", e2);
-                                            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Retry failed: {:#}", e2)))
+                                            Err((
+                                                StatusCode::INTERNAL_SERVER_ERROR,
+                                                format!("Retry failed: {:#}", e2),
+                                            ))
                                         }
                                     }
                                 }
                                 Err(reauth_err) => {
                                     tracing::error!("Re-authentication failed: {}", reauth_err);
-                                    Err((StatusCode::INTERNAL_SERVER_ERROR, "Re-authentication failed".to_string()))
+                                    Err((
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        "Re-authentication failed".to_string(),
+                                    ))
                                 }
                             }
                         } else {
                             tracing::error!("Cannot refresh token: credentials missing");
-                            Err((StatusCode::INTERNAL_SERVER_ERROR, "Credentials missing for refresh".to_string()))
+                            Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Credentials missing for refresh".to_string(),
+                            ))
                         }
                     } else {
                         // Other error
@@ -110,7 +139,10 @@ pub async fn get_feed_skeleton(
             let auth_header = headers
                 .get("authorization")
                 .and_then(|h| h.to_str().ok())
-                .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
+                .ok_or((
+                    StatusCode::UNAUTHORIZED,
+                    "Missing or invalid authorization header".to_string(),
+                ))?;
 
             // Extract DID from JWT
             let did = todoapp::api::extract_did_from_jwt(auth_header)
@@ -122,17 +154,32 @@ pub async fn get_feed_skeleton(
                 (state.http_client.clone(), auth.token.clone())
             };
 
-            let token = current_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
+            let token = current_token.ok_or((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Service not authenticated".to_string(),
+            ))?;
 
             // First attempt
-            match oneyearago::get_feed_skeleton(&client, auth_header, &token, &did, params.limit.unwrap_or(30), params.cursor.clone()).await {
+            match oneyearago::get_feed_skeleton(
+                &client,
+                auth_header,
+                &token,
+                &did,
+                params.limit.unwrap_or(30),
+                params.cursor.clone(),
+            )
+            .await
+            {
                 Ok(res) => Ok(Json(res)),
                 Err(e) => {
                     let err_msg = format!("{:?}", e);
-                    if err_msg.contains("ExpiredToken") || err_msg.contains("401") || err_msg.contains("Unauthorized") {
+                    if err_msg.contains("ExpiredToken")
+                        || err_msg.contains("401")
+                        || err_msg.contains("Unauthorized")
+                    {
                         tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
-                         // RE-AUTHENTICATION LOGIC
+                        // RE-AUTHENTICATION LOGIC
                         let handle = &state.auth_handle;
                         let password = &state.auth_password;
 
@@ -148,22 +195,40 @@ pub async fn get_feed_skeleton(
                                     }
 
                                     // Retry request with new token
-                                    match oneyearago::get_feed_skeleton(&client, auth_header, &new_token, &did, params.limit.unwrap_or(30), params.cursor.clone()).await {
+                                    match oneyearago::get_feed_skeleton(
+                                        &client,
+                                        auth_header,
+                                        &new_token,
+                                        &did,
+                                        params.limit.unwrap_or(30),
+                                        params.cursor.clone(),
+                                    )
+                                    .await
+                                    {
                                         Ok(res) => Ok(Json(res)),
                                         Err(e2) => {
                                             tracing::error!("Retry failed: {:#}", e2);
-                                            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Retry failed: {:#}", e2)))
+                                            Err((
+                                                StatusCode::INTERNAL_SERVER_ERROR,
+                                                format!("Retry failed: {:#}", e2),
+                                            ))
                                         }
                                     }
                                 }
                                 Err(reauth_err) => {
                                     tracing::error!("Re-authentication failed: {}", reauth_err);
-                                    Err((StatusCode::INTERNAL_SERVER_ERROR, "Re-authentication failed".to_string()))
+                                    Err((
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        "Re-authentication failed".to_string(),
+                                    ))
                                 }
                             }
                         } else {
-                             tracing::error!("Cannot refresh token: credentials missing");
-                             Err((StatusCode::INTERNAL_SERVER_ERROR, "Credentials missing for refresh".to_string()))
+                            tracing::error!("Cannot refresh token: credentials missing");
+                            Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Credentials missing for refresh".to_string(),
+                            ))
                         }
                     } else {
                         tracing::error!("Oneyearago error: {:#}", e);

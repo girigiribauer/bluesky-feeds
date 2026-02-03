@@ -3,7 +3,11 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 
-pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Result<(String, String)> {
+pub async fn authenticate(
+    client: &Client,
+    handle: &str,
+    password: &str,
+) -> Result<(String, String)> {
     let url = "https://bsky.social/xrpc/com.atproto.server.createSession";
     let body = serde_json::json!({
         "identifier": handle,
@@ -27,10 +31,15 @@ pub async fn authenticate(client: &Client, handle: &str, password: &str) -> Resu
     Ok((session.access_jwt, session.did))
 }
 
-pub async fn search_posts(client: &Client, q: &str, author_did: &str, service_token: &str) -> Result<Vec<PostView>> {
+pub async fn search_posts(
+    client: &Client,
+    q: &str,
+    author_did: &str,
+    service_token: &str,
+) -> Result<Vec<PostView>> {
     // Authenticated API request using Service Token
     let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
-    let query_param = format!("{}", q); // q parameter
+    let query_param = q.to_string(); // q parameter
 
     let res = client
         .get(url)
@@ -51,7 +60,10 @@ pub async fn search_posts(client: &Client, q: &str, author_did: &str, service_to
         anyhow::bail!("Search API failed: {} - {}", status, text);
     }
 
-    let search_res: SearchResponse = res.json().await.context("Failed to parse search response")?;
+    let search_res: SearchResponse = res
+        .json()
+        .await
+        .context("Failed to parse search response")?;
     Ok(search_res.posts)
 }
 
@@ -72,7 +84,8 @@ pub fn extract_did_from_jwt(header: &str) -> Result<String> {
         .or_else(|_| general_purpose::URL_SAFE.decode(payload_part))
         .context("Failed to decode JWT payload")?;
 
-    let payload: JwtPayload = serde_json::from_slice(&decoded).context("Failed to parse JWT payload")?;
+    let payload: JwtPayload =
+        serde_json::from_slice(&decoded).context("Failed to parse JWT payload")?;
     Ok(payload.iss)
 }
 

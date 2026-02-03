@@ -1,10 +1,9 @@
 use anyhow::Result;
+use atrium_api::types::string::Nsid;
 use jetstream_oxide::{
     events::{commit::CommitEvent, JetstreamEvent},
     JetstreamCompression, JetstreamConfig, JetstreamConnector,
 };
-use atrium_api::types::string::Nsid;
-use tracing;
 
 const JETSTREAM_URL: &str = "wss://jetstream1.us-east.bsky.network/subscribe";
 

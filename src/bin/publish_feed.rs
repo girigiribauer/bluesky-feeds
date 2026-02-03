@@ -104,10 +104,14 @@ async fn main() -> Result<()> {
     }
     let target_service = &args[1];
 
-    let handle = env::var("APP_HANDLE").context("APP_HANDLE not set in .env (checked current and parent directories)")?;
-    let password = env::var("APP_PASSWORD").context("APP_PASSWORD not set in .env (checked current and parent directories)")?;
+    let handle = env::var("APP_HANDLE")
+        .context("APP_HANDLE not set in .env (checked current and parent directories)")?;
+    let password = env::var("APP_PASSWORD")
+        .context("APP_PASSWORD not set in .env (checked current and parent directories)")?;
 
-    let config = AVAILABLE_FEED_SERVICES.iter().find(|c| c.service == target_service)
+    let config = AVAILABLE_FEED_SERVICES
+        .iter()
+        .find(|c| c.service == target_service)
         .context(format!("Feed service '{}' not found", target_service))?;
 
     let client = ClientBuilder::new().build()?;
@@ -121,20 +125,23 @@ async fn main() -> Result<()> {
         let final_path = if path.exists() {
             path.to_path_buf()
         } else {
-             let alt = Path::new("..").join(path);
-             if alt.exists() {
-                 alt
-             } else {
-                 path.to_path_buf()
-             }
+            let alt = Path::new("..").join(path);
+            if alt.exists() {
+                alt
+            } else {
+                path.to_path_buf()
+            }
         };
 
         if final_path.exists() {
-             println!("Uploading avatar: {:?}", final_path);
-             Some(upload_blob(&client, &session.access_jwt, &final_path).await?)
+            println!("Uploading avatar: {:?}", final_path);
+            Some(upload_blob(&client, &session.access_jwt, &final_path).await?)
         } else {
-             println!("Avatar file not found at {:?}, skipping avatar upload.", final_path);
-             None
+            println!(
+                "Avatar file not found at {:?}, skipping avatar upload.",
+                final_path
+            );
+            None
         }
     } else {
         None
@@ -149,15 +156,30 @@ async fn main() -> Result<()> {
         created_at: chrono::Utc::now().to_rfc3339(),
     };
 
-    put_record(&client, &session.access_jwt, &session.did, config.service, record).await?;
+    put_record(
+        &client,
+        &session.access_jwt,
+        &session.did,
+        config.service,
+        record,
+    )
+    .await?;
     println!("Successfully published {}", config.service);
 
     Ok(())
 }
 
-async fn create_session(client: &Client, identifier: &str, password: &str) -> Result<CreateSessionResponse> {
-    let res = client.post("https://bsky.social/xrpc/com.atproto.server.createSession")
-        .json(&CreateSessionRequest { identifier, password })
+async fn create_session(
+    client: &Client,
+    identifier: &str,
+    password: &str,
+) -> Result<CreateSessionResponse> {
+    let res = client
+        .post("https://bsky.social/xrpc/com.atproto.server.createSession")
+        .json(&CreateSessionRequest {
+            identifier,
+            password,
+        })
         .send()
         .await?
         .error_for_status()?;
@@ -167,7 +189,8 @@ async fn create_session(client: &Client, identifier: &str, password: &str) -> Re
 
 async fn upload_blob(client: &Client, token: &str, path: &PathBuf) -> Result<BlobRef> {
     let bytes = std::fs::read(path).context("Failed to read avatar file")?;
-    let res = client.post("https://bsky.social/xrpc/com.atproto.repo.uploadBlob")
+    let res = client
+        .post("https://bsky.social/xrpc/com.atproto.repo.uploadBlob")
         .header("Authorization", format!("Bearer {}", token))
         .header("Content-Type", "image/png")
         .body(bytes)
@@ -179,7 +202,13 @@ async fn upload_blob(client: &Client, token: &str, path: &PathBuf) -> Result<Blo
     Ok(wrap.blob)
 }
 
-async fn put_record(client: &Client, token: &str, repo: &str, rkey: &str, record: FeedGeneratorRecord) -> Result<()> {
+async fn put_record(
+    client: &Client,
+    token: &str,
+    repo: &str,
+    rkey: &str,
+    record: FeedGeneratorRecord,
+) -> Result<()> {
     let req = PutRecordRequest {
         repo: repo.to_string(),
         collection: "app.bsky.feed.generator".to_string(),
@@ -187,7 +216,8 @@ async fn put_record(client: &Client, token: &str, repo: &str, rkey: &str, record
         record,
     };
 
-    client.post("https://bsky.social/xrpc/com.atproto.repo.putRecord")
+    client
+        .post("https://bsky.social/xrpc/com.atproto.repo.putRecord")
         .header("Authorization", format!("Bearer {}", token))
         .json(&req)
         .send()

@@ -1,7 +1,7 @@
+use crate::timezone;
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
-use crate::timezone;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct SearchResponse {
@@ -35,7 +35,11 @@ pub trait PostFetcher {
         cursor: Option<String>,
     ) -> Result<(Vec<PostView>, Option<String>)>;
 
-    async fn determine_timezone(&self, handle: &str, user_token: &str) -> Result<chrono::FixedOffset>;
+    async fn determine_timezone(
+        &self,
+        handle: &str,
+        user_token: &str,
+    ) -> Result<chrono::FixedOffset>;
 }
 
 pub struct BlueskyFetcher {
@@ -62,7 +66,8 @@ impl PostFetcher for BlueskyFetcher {
         let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
         let q = format!("from:{} since:{} until:{}", author, since, until);
 
-        let mut req = self.client
+        let mut req = self
+            .client
             .get(url)
             .header("Authorization", format!("Bearer {}", token))
             .query(&[
@@ -82,12 +87,18 @@ impl PostFetcher for BlueskyFetcher {
             return Ok((vec![], None));
         }
 
-        let search_res: SearchResponse = res.json().await.context("Failed to parse search response")?;
+        let search_res: SearchResponse = res
+            .json()
+            .await
+            .context("Failed to parse search response")?;
         Ok((search_res.posts, search_res.cursor))
     }
 
-    async fn determine_timezone(&self, handle: &str, user_token: &str) -> Result<chrono::FixedOffset> {
+    async fn determine_timezone(
+        &self,
+        handle: &str,
+        user_token: &str,
+    ) -> Result<chrono::FixedOffset> {
         timezone::determine_timezone(&self.client, handle, user_token).await
     }
 }
-
