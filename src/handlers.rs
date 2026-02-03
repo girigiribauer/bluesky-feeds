@@ -32,15 +32,15 @@ pub async fn get_feed_skeleton(
                 .and_then(|h| h.to_str().ok())
                 .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
 
-            if let Ok(lock) = state.read() {
-                Ok(Json(helloworld::get_feed_skeleton(
-                    &lock.helloworld,
-                    params.cursor,
-                    params.limit,
-                )))
-            } else {
-                Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()))
-            }
+            let pool = state.helloworld_db.clone();
+
+            let skeleton = helloworld::get_feed_skeleton(
+                &pool,
+                params.cursor,
+                params.limit,
+            ).await;
+
+            Ok(Json(skeleton))
         }
         FeedService::Todoapp => {
             let auth_header = headers
@@ -48,11 +48,10 @@ pub async fn get_feed_skeleton(
                 .and_then(|h| h.to_str().ok())
                 .ok_or((StatusCode::UNAUTHORIZED, "Missing or invalid authorization header".to_string()))?;
 
-            // Read client and current token from state (Read Lock)
-            let (client, current_token, handle, password) = if let Ok(lock) = state.read() {
-                (lock.http_client.clone(), lock.service_token.clone(), lock.auth_handle.clone(), lock.auth_password.clone())
-            } else {
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
+            // Read client and current token
+            let (client, current_token) = {
+                let auth = state.service_auth.read().await;
+                (state.http_client.clone(), auth.token.clone())
             };
 
             let token = current_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
@@ -67,14 +66,18 @@ pub async fn get_feed_skeleton(
                         tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
                         // RE-AUTHENTICATION LOGIC
+                        let handle = &state.auth_handle;
+                        let password = &state.auth_password;
+
                         if !handle.is_empty() && !password.is_empty() {
-                            match todoapp::authenticate(&client, &handle, &password).await {
+                            match todoapp::authenticate(&client, handle, password).await {
                                 Ok((new_token, new_did)) => {
                                     tracing::info!("Token refresh successful (DID: {})", new_did);
-                                    // Update state with new token (Write Lock)
-                                    if let Ok(mut lock) = state.write() {
-                                        lock.service_token = Some(new_token.clone());
-                                        lock.service_did = Some(new_did);
+                                    // Update state with new token
+                                    {
+                                        let mut auth = state.service_auth.write().await;
+                                        auth.token = Some(new_token.clone());
+                                        auth.did = Some(new_did);
                                     }
 
                                     // Retry request with new token
@@ -113,11 +116,10 @@ pub async fn get_feed_skeleton(
             let did = todoapp::api::extract_did_from_jwt(auth_header)
                 .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
 
-            // Read client and current token from state
-            let (client, current_token, handle, password) = if let Ok(lock) = state.read() {
-                (lock.http_client.clone(), lock.service_token.clone(), lock.auth_handle.clone(), lock.auth_password.clone())
-            } else {
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
+            // Read client and current token
+            let (client, current_token) = {
+                let auth = state.service_auth.read().await;
+                (state.http_client.clone(), auth.token.clone())
             };
 
             let token = current_token.ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Service not authenticated".to_string()))?;
@@ -131,14 +133,18 @@ pub async fn get_feed_skeleton(
                         tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
                          // RE-AUTHENTICATION LOGIC
+                        let handle = &state.auth_handle;
+                        let password = &state.auth_password;
+
                         if !handle.is_empty() && !password.is_empty() {
-                            match todoapp::authenticate(&client, &handle, &password).await {
+                            match todoapp::authenticate(&client, handle, password).await {
                                 Ok((new_token, new_did)) => {
                                     tracing::info!("Token refresh successful (DID: {})", new_did);
-                                    // Update state with new token (Write Lock)
-                                    if let Ok(mut lock) = state.write() {
-                                        lock.service_token = Some(new_token.clone());
-                                        lock.service_did = Some(new_did);
+                                    // Update state with new token
+                                    {
+                                        let mut auth = state.service_auth.write().await;
+                                        auth.token = Some(new_token.clone());
+                                        auth.did = Some(new_did);
                                     }
 
                                     // Retry request with new token
@@ -172,16 +178,15 @@ pub async fn get_feed_skeleton(
 pub async fn describe_feed_generator(
     State(state): State<SharedState>,
 ) -> Result<Json<models::DescribeFeedGeneratorResponse>, (StatusCode, String)> {
-    let (did, _service_did) = if let Ok(lock) = state.read() {
+    let (did, _service_did) = {
+        let auth = state.service_auth.read().await;
         // Authenticated Service DID (from .env/auth) or default from context if we hardcoded it?
         // Ideally we use the authenticated DID.
-        let did = lock.service_did.clone().ok_or((
+        let did = auth.did.clone().ok_or((
             StatusCode::SERVICE_UNAVAILABLE,
             "Service not authenticated yet".to_string(),
         ))?;
         (did.clone(), did) // logic::service_did
-    } else {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Lock error".to_string()));
     };
 
     let feeds = vec![

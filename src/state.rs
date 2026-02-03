@@ -1,5 +1,7 @@
 use serde::Deserialize;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Deserialize)]
 pub struct FeedQuery {
@@ -8,14 +10,20 @@ pub struct FeedQuery {
     pub limit: Option<usize>,
 }
 
-pub type SharedState = Arc<RwLock<AppState>>;
+pub type SharedState = AppState;
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct AppState {
     pub helloworld: helloworld::State,
     pub http_client: reqwest::Client,
-    pub service_token: Option<String>,
-    pub service_did: Option<String>,
+    pub service_auth: Arc<RwLock<ServiceAuth>>,
     pub auth_handle: String,
     pub auth_password: String,
+    pub helloworld_db: SqlitePool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ServiceAuth {
+    pub token: Option<String>,
+    pub did: Option<String>,
 }

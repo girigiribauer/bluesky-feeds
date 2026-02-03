@@ -1,100 +1,106 @@
-use std::collections::VecDeque;
 use models::{FeedItem, FeedSkeletonResult};
 use jetstream_oxide::events::commit::CommitEvent;
 use atrium_api::record::KnownRecord;
+use sqlx::{SqlitePool, Row};
+use regex::Regex;
+use std::sync::OnceLock;
 
-const MAX_POSTS: usize = 1000;
-const DEFAULT_LIMIT: usize = 30;
+static HELLO_REGEX: OnceLock<Regex> = OnceLock::new();
 
-#[derive(Debug)]
-pub struct PostData {
-    pub uri: String,
-    pub indexed_at: i64, // micro seconds
+#[derive(Debug, Default, Clone)]
+pub struct State {}
+
+/// "Hello World" パターンにマッチするかを判定
+///
+/// 正規表現: `(?i)hello[,\s]*world`
+/// - 大文字小文字を区別しない
+/// - "hello" と "world" の間にカンマやスペースが0個以上あることを許容
+pub fn matches_hello_world(text: &str) -> bool {
+    let regex = HELLO_REGEX.get_or_init(|| {
+        Regex::new(r"(?i)hello[,\s]*world").unwrap()
+    });
+    regex.is_match(text)
 }
 
-#[derive(Debug, Default)]
-pub struct State {
-    pub posts: VecDeque<PostData>,
-}
-
-pub fn process_event(state: &mut State, event: &CommitEvent) {
+pub async fn process_event(pool: &SqlitePool, event: CommitEvent) {
     if let CommitEvent::Create { info, commit } = event {
         if let KnownRecord::AppBskyFeedPost(post) = &commit.record {
-            process_record(
-                state,
-                commit.info.collection.as_str(),
-                commit.info.rkey.as_str(),
-                info.did.as_str(),
-                post,
-            );
+            let collection = commit.info.collection.as_str();
+            if collection != "app.bsky.feed.post" {
+                return;
+            }
+
+            let text = &post.text;
+
+            if matches_hello_world(text) {
+                let rkey = commit.info.rkey.as_str();
+                let did = info.did.as_str();
+                let post_uri = format!("at://{}/{}/{}", did, collection, rkey);
+                tracing::info!("Found hello world post: {}", post_uri);
+
+                let indexed_at = chrono::Utc::now().timestamp_micros();
+                let cid = commit.cid.as_ref().to_string();
+
+                let result = sqlx::query(
+                    "INSERT OR IGNORE INTO helloworld_posts (uri, cid, indexed_at) VALUES (?, ?, ?)"
+                )
+                .bind(&post_uri)
+                .bind(cid)
+                .bind(indexed_at)
+                .execute(pool)
+                .await;
+
+                if let Err(e) = result {
+                    tracing::error!("Failed to insert post: {}", e);
+                }
+            }
         }
     }
 }
 
-pub fn process_record(
-    state: &mut State,
-    collection: &str,
-    rkey: &str,
-    did: &str,
-    post: &atrium_api::app::bsky::feed::post::Record,
-) {
-    if collection != "app.bsky.feed.post" {
-        return;
-    }
-
-    if post.text.to_lowercase().contains("hello world") {
-        let post_uri = format!("at://{}/{}/{}", did, collection, rkey);
-        tracing::info!("Found hello world post: {}", post_uri);
-        tracing::info!("Link: https://bsky.app/profile/{}/post/{}", did, rkey);
-
-        let indexed_at = chrono::Utc::now().timestamp_micros();
-
-        state.posts.push_front(PostData {
-            uri: post_uri,
-            indexed_at,
-        });
-
-        if state.posts.len() > MAX_POSTS {
-            state.posts.pop_back();
-        }
-    }
-}
-
-pub fn get_feed_skeleton(
-    state: &State,
+pub async fn get_feed_skeleton(
+    pool: &SqlitePool,
     cursor: Option<String>,
     limit: Option<usize>,
 ) -> FeedSkeletonResult {
+    let limit = limit.unwrap_or(30).min(100);
     let mut feed = Vec::new();
-    let limit = limit.unwrap_or(DEFAULT_LIMIT);
 
-    // カーソルがない場合（初回リクエスト）のみ固定ポストを追加
+    // Fixed pinned post at the top for first page
     if cursor.is_none() {
         feed.push(FeedItem {
-            post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3ldcooerekc2y".to_string(),
+            post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3jtadqcbi7r2a".to_string(),
         });
     }
 
-    let cursor_timestamp = cursor.and_then(|c| c.parse::<i64>().ok());
+    let cursor_val = cursor.and_then(|c| c.parse::<i64>().ok()).unwrap_or(i64::MAX);
 
-    let dynamic_posts: Vec<_> = state
-        .posts
-        .iter()
-        .filter(|post| {
-            // カーソルがある場合は、それより古い（小さい）ものだけを対象にする
-            match cursor_timestamp {
-                Some(ts) => post.indexed_at < ts,
-                None => true,
+    let rows_result = sqlx::query(
+        "SELECT uri, indexed_at FROM helloworld_posts WHERE indexed_at < ? ORDER BY indexed_at DESC LIMIT ?"
+    )
+    .bind(cursor_val)
+    .bind(limit as i64)
+    .fetch_all(pool)
+    .await;
+
+    let mut next_cursor = None;
+
+    match rows_result {
+        Ok(rows) => {
+            if let Some(last) = rows.last() {
+                let last_ts: i64 = last.get("indexed_at");
+                next_cursor = Some(last_ts.to_string());
             }
-        })
-        .take(limit)
-        .collect();
 
-    let next_cursor = dynamic_posts.last().map(|p| p.indexed_at.to_string());
-
-    feed.extend(dynamic_posts.into_iter().map(|p| FeedItem {
-        post: p.uri.clone(),
-    }));
+            for row in rows {
+                let uri: String = row.get("uri");
+                feed.push(FeedItem { post: uri });
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch feed: {}", e);
+        }
+    }
 
     FeedSkeletonResult {
         cursor: next_cursor,
@@ -102,69 +108,69 @@ pub fn get_feed_skeleton(
     }
 }
 
+pub async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS helloworld_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use atrium_api::app::bsky::feed::post::{Record, RecordData};
-    use atrium_api::types::string::Datetime;
-    use ipld_core::ipld::Ipld;
-    use std::collections::BTreeMap;
 
-    fn make_record(text: &str) -> Record {
-        Record {
-            data: RecordData {
-                text: text.to_string(),
-                created_at: Datetime::new(chrono::DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap()),
-                embed: None,
-                entities: None,
-                facets: None,
-                labels: None,
-                langs: None,
-                reply: None,
-                tags: None,
-            },
-            extra_data: Ipld::Map(BTreeMap::new()),
-        }
+    /// helloworld の正規表現が意図通りにマッチするか検証
+    #[test]
+    fn test_matches_hello_world() {
+        // Should match
+        assert!(matches_hello_world("Hello world"));
+        assert!(matches_hello_world("HelloWorld"));
+        assert!(matches_hello_world("hello, world"));
+        assert!(matches_hello_world("HELLO WORLD"));
+        assert!(matches_hello_world("hello  world"));
+
+        // Should NOT match
+        assert!(!matches_hello_world("Hello everyone in the world"));
+        assert!(!matches_hello_world("world hello"));
+        assert!(!matches_hello_world("hello"));
+        assert!(!matches_hello_world("world"));
     }
 
-    #[test]
-    fn test_hello_detection() {
-        let mut state = State::default();
-        let record = make_record("Hello world this is a test");
+    /// マイグレーションが `helloworld_posts` テーブルを正しく作成するか検証
+    #[tokio::test]
+    async fn test_migrate_creates_table() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
 
-        process_record(&mut state, "app.bsky.feed.post", "rkey", "did:plc:test", &record);
+        // Run migration
+        migrate(&pool).await.unwrap();
 
-        assert_eq!(state.posts.len(), 1);
-        assert_eq!(state.posts[0].uri, "at://did:plc:test/app.bsky.feed.post/rkey");
+        // Verify table exists by querying it
+        let result = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='helloworld_posts'")
+            .fetch_one(&pool)
+            .await;
+
+        assert!(result.is_ok());
     }
 
-    #[test]
-    fn test_case_insensitive() {
-        let mut state = State::default();
-        let record = make_record("hELLO wORLD this is a test");
+    /// マイグレーションが冪等性を持つか検証（複数回実行してもエラーにならない）
+    #[tokio::test]
+    async fn test_migrate_is_idempotent() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
 
-        process_record(&mut state, "app.bsky.feed.post", "rkey", "did:plc:test", &record);
+        // Run migration twice
+        migrate(&pool).await.unwrap();
+        let result = migrate(&pool).await;
 
-        assert_eq!(state.posts.len(), 1);
-    }
-
-    #[test]
-    fn test_ignore_other_text() {
-        let mut state = State::default();
-        let record = make_record("Goodbye world");
-
-        process_record(&mut state, "app.bsky.feed.post", "rkey", "did:plc:test", &record);
-
-        assert_eq!(state.posts.len(), 0);
-    }
-
-    #[test]
-    fn test_ignore_other_collection() {
-        let mut state = State::default();
-        let record = make_record("Hello world");
-
-        process_record(&mut state, "app.bsky.graph.follow", "rkey", "did:plc:test", &record);
-
-        assert_eq!(state.posts.len(), 0);
+        // Should not error on second run
+        assert!(result.is_ok());
     }
 }

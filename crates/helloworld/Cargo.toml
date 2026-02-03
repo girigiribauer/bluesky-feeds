@@ -5,14 +5,16 @@ edition = "2021"
 
 [dependencies]
 models = { path = "../models" }
-serde = { workspace = true }
 jetstream-oxide = { workspace = true }
 atrium-api = { workspace = true }
-tracing = { workspace = true }
 chrono = { workspace = true }
+tracing = { workspace = true }
+ipld-core = "0.4.1"
+sqlx = { workspace = true }
+regex = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 chrono = { workspace = true }
 cid = { workspace = true }
 serde_json = { workspace = true }
-ipld-core = { version = "0.4" } # Adding missing dependency too

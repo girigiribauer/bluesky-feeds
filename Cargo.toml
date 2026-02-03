@@ -34,6 +34,9 @@ futures-util = "0.3"
 chrono = "0.4"
 cid = "0.10"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
+regex = "1.10"
+image = "0.24"
 
 [lib]
 name = "bluesky_feeds"
@@ -60,4 +63,5 @@ futures-util = { workspace = true }
 anyhow = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
+sqlx = { workspace = true }
 dotenv = "0.15"

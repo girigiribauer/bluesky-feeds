@@ -8,9 +8,10 @@ use tracing;
 
 const JETSTREAM_URL: &str = "wss://jetstream1.us-east.bsky.network/subscribe";
 
-pub async fn connect_and_run<F>(callback: F) -> Result<()>
+pub async fn connect_and_run<F, Fut>(callback: F) -> Result<()>
 where
-    F: Fn(&CommitEvent) + Send + Sync + 'static,
+    F: Fn(CommitEvent) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send,
 {
     tracing::info!("Connecting to Jetstream at {}", JETSTREAM_URL);
 
@@ -31,7 +32,7 @@ where
 
     while let Ok(event) = receiver.recv_async().await {
         if let JetstreamEvent::Commit(event) = event {
-            callback(&event);
+            callback(event).await;
         }
     }
 

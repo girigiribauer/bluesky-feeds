@@ -6,24 +6,44 @@ use bluesky_feeds::{app, state::{AppState, SharedState}};
 use helloworld;
 use reqwest;
 use serde_json::Value;
-use std::sync::{Arc, RwLock};
+use sqlx::{self};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower::util::ServiceExt;
 
-fn create_test_state() -> SharedState {
-    Arc::new(RwLock::new(AppState {
+async fn create_test_state() -> SharedState {
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS helloworld_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+
+    AppState {
         helloworld: helloworld::State::default(),
         http_client: reqwest::Client::new(),
-        service_token: None,
-        service_did: None,
+        service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth { token: None, did: None })),
         auth_handle: "test.example.com".to_string(),
         auth_password: "dummy".to_string(),
-    }))
+        helloworld_db: db,
+    }
 }
 
 /// ヘルスチェック: /health が 200 OK を返すか検証
 #[tokio::test]
 async fn test_health_check() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app
@@ -45,7 +65,7 @@ async fn test_health_check() {
 /// DID認証情報: /.well-known/did.json が正しい構造とIDを返すか検証
 #[tokio::test]
 async fn test_did_json_response() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app
@@ -73,7 +93,7 @@ async fn test_did_json_response() {
 /// フィード取得(異常系): 認証ヘッダーがない場合に 401 Unauthorized を返すか検証
 #[tokio::test]
 async fn test_feed_skeleton_missing_auth() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app
@@ -92,7 +112,7 @@ async fn test_feed_skeleton_missing_auth() {
 /// フィード取得(異常系): 必須パラメータ(feed)が不足している場合に 400 Bad Request を返すか検証
 #[tokio::test]
 async fn test_feed_skeleton_missing_param() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app
@@ -112,7 +132,7 @@ async fn test_feed_skeleton_missing_param() {
 /// フィード取得(異常系): 存在しないフィード名を指定した場合に 404 Not Found を返すか検証
 #[tokio::test]
 async fn test_feed_skeleton_unknown_feed() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app
@@ -132,7 +152,7 @@ async fn test_feed_skeleton_unknown_feed() {
 /// フィード取得(正常系): helloworld フィードが正常に取得できるか検証
 #[tokio::test]
 async fn test_feed_skeleton_helloworld_success() {
-    let state = create_test_state();
+    let state = create_test_state().await;
     let app = app(state);
 
     let response = app

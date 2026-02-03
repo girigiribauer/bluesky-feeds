@@ -1,11 +1,12 @@
-use bluesky_feeds::state::{AppState, SharedState};
+use bluesky_feeds::state::AppState;
 use bluesky_feeds::app;
 use std::net::SocketAddr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     println!("Starting Rust Bluesky Feed Generator...");
 
     tracing_subscriber::registry()
@@ -18,55 +19,46 @@ async fn main() {
 
     tracing::info!("Log initialized");
 
-    // Initialize app state with standard HTTP client
-    let client = reqwest::Client::builder()
-        .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
-        .build()
-        .expect("Failed to build HTTP client");
-
     // Authenticate with Bluesky (Service Auth)
     let handle = std::env::var("APP_HANDLE").unwrap_or_default();
     let password = std::env::var("APP_PASSWORD").unwrap_or_default();
-    let mut service_token = None;
-    let mut service_did = None;
 
-    if !handle.is_empty() && !password.is_empty() {
-        tracing::info!("Authenticating as {}...", handle);
-        match todoapp::authenticate(&client, &handle, &password).await {
-            Ok((token, did)) => {
-                tracing::info!("Successfully authenticated with Bluesky (DID: {})", did);
-                service_token = Some(token);
-                service_did = Some(did);
-            }
-            Err(e) => {
-                tracing::error!("Failed to authenticate with Bluesky: {}. Search API will fail.", e);
-            }
-        }
-    } else {
-        tracing::error!("APP_HANDLE or APP_PASSWORD not set. Application cannot function correctly.");
-        // Prevent tight restart loop
+    if password.is_empty() {
+        println!("Error: APP_PASSWORD environment variable is not set.");
         tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-        panic!("Missing required configuration: APP_HANDLE or APP_PASSWORD");
+        panic!("APP_PASSWORD is missing");
     }
 
-    if handle != "feeds.bsky.girigiribauer.com" && !handle.is_empty() {
-        tracing::warn!("CAUTION: APP_HANDLE ({}) does not match production host (feeds.bsky.girigiribauer.com). specific functionality like did.json might be incorrect if this is production.", handle);
-    }
+    // Initialize Database
+    let database_url = std::env::var("HELLOWORLD_DB_URL").unwrap_or_else(|_| "sqlite:helloworld.db".to_string());
+    tracing::info!("Connecting to database: {}", database_url);
 
-    let state: SharedState = Arc::new(RwLock::new(AppState {
+    let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
+    helloworld::migrate(&helloworld_db).await?;
+
+    let app_state = AppState {
         helloworld: helloworld::State::default(),
-        http_client: client,
-        service_token,
-        service_did,
+        http_client: reqwest::Client::builder()
+            .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
+            .build()
+            .expect("Failed to build HTTP client"),
+        service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
+            token: None,
+            did: None
+        })),
         auth_handle: handle,
         auth_password: password,
-    }));
+        helloworld_db,
+    };
 
-    let state_for_ingester = state.clone();
+    // Start Jetstream consumer in background
+    let state_for_consumer = app_state.clone();
     tokio::spawn(async move {
         let result = jetstream::connect_and_run(move |event| {
-            if let Ok(mut lock) = state_for_ingester.write() {
-                helloworld::process_event(&mut lock.helloworld, event);
+            let state = state_for_consumer.clone();
+            async move {
+                let pool = state.helloworld_db.clone();
+                helloworld::process_event(&pool, event).await;
             }
         })
         .await;
@@ -75,8 +67,6 @@ async fn main() {
             tracing::error!("Jetstream ingester failed: {}", e);
         }
     });
-
-    let app = app(state);
 
     let port = std::env::var("PORT")
         .ok()
@@ -87,12 +77,11 @@ async fn main() {
     println!("Attempting to bind/listen on {}", addr);
     tracing::info!("Rust feed server listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind to address");
+    let listener = tokio::net::TcpListener::bind(addr).await?;
 
     println!("Server started successfully");
-    axum::serve(listener, app)
-        .await
-        .expect("Server failed to run");
+    let router = app(app_state);
+    axum::serve(listener, router).await?;
+
+    Ok(())
 }
