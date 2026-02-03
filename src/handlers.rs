@@ -286,6 +286,9 @@ pub async fn describe_feed_generator(
         models::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/oneyearago", did),
         },
+        models::FeedUri {
+            uri: format!("at://{}/app.bsky.feed.generator/fakebluesky", did),
+        },
     ];
 
     Ok(Json(models::DescribeFeedGeneratorResponse { did, feeds }))
