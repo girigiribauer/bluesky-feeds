@@ -36,15 +36,34 @@ async fn main() -> anyhow::Result<()> {
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
     helloworld::migrate(&helloworld_db).await?;
 
+    // Perform initial authentication
+    let http_client = reqwest::Client::builder()
+        .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
+        .build()
+        .expect("Failed to build HTTP client");
+
+    let (initial_token, initial_did) = if !handle.is_empty() && !password.is_empty() {
+        match todoapp::authenticate(&http_client, &handle, &password).await {
+            Ok((token, did)) => {
+                tracing::info!("Initial authentication successful (DID: {})", did);
+                (Some(token), Some(did))
+            }
+            Err(e) => {
+                tracing::warn!("Initial authentication failed: {}. Feeds requiring auth will fail until first request triggers re-auth.", e);
+                (None, None)
+            }
+        }
+    } else {
+        tracing::warn!("No credentials provided. Feeds requiring auth will fail.");
+        (None, None)
+    };
+
     let app_state = AppState {
         helloworld: helloworld::State::default(),
-        http_client: reqwest::Client::builder()
-            .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
-            .build()
-            .expect("Failed to build HTTP client"),
+        http_client,
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
-            token: None,
-            did: None
+            token: initial_token,
+            did: initial_did,
         })),
         auth_handle: handle,
         auth_password: password,

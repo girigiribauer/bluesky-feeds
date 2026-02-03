@@ -67,9 +67,10 @@ pub async fn get_feed_skeleton(
     let mut feed = Vec::new();
 
     // Fixed pinned post at the top for first page
+    // Testing with @bsky.app's old post to verify if age is the issue
     if cursor.is_none() {
         feed.push(FeedItem {
-            post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3jtadqcbi7r2a".to_string(),
+            post: "at://did:plc:z72i7hdynmk6r22z27h6tvur/app.bsky.feed.post/3jt5hq2ft2s2g".to_string(),
         });
         tracing::info!("Added pinned post to feed (first page)");
     }
