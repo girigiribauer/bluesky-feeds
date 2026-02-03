@@ -71,6 +71,7 @@ pub async fn get_feed_skeleton(
         feed.push(FeedItem {
             post: "at://did:plc:tsvcmd72oxp47wtixs4qllyi/app.bsky.feed.post/3jtadqcbi7r2a".to_string(),
         });
+        tracing::info!("Added pinned post to feed (first page)");
     }
 
     let cursor_val = cursor.as_ref().and_then(|c| c.parse::<i64>().ok()).unwrap_or(i64::MAX);
@@ -108,6 +109,8 @@ pub async fn get_feed_skeleton(
             tracing::error!("Failed to fetch feed: {}", e);
         }
     }
+
+    tracing::info!("Returning feed with {} items (cursor: {:?})", feed.len(), next_cursor);
 
     FeedSkeletonResult {
         cursor: next_cursor,
