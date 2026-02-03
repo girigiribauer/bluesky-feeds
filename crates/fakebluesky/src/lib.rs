@@ -64,6 +64,11 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
             _ => return,
         };
 
+        // Filter by text content: must contain "bluesky" (case-insensitive)
+        if !post.text.to_lowercase().contains("bluesky") {
+            return;
+        }
+
         // Extract post data
         let did = info.did.as_str();
         let rkey = commit.info.rkey.as_str();
