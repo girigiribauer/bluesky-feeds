@@ -237,6 +237,28 @@ pub async fn get_feed_skeleton(
                 }
             }
         }
+        FeedService::Fakebluesky => {
+            let skeleton = fakebluesky::get_feed_skeleton(
+                &state.fakebluesky_db,
+                params.limit.unwrap_or(30),
+                params.cursor.clone(),
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!("Fakebluesky error: {:#}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e))
+            })?;
+
+            // Convert to FeedSkeletonResult
+            let result = models::FeedSkeletonResult {
+                feed: skeleton.feed.into_iter().map(|item| models::FeedItem {
+                    post: item.post,
+                }).collect(),
+                cursor: skeleton.cursor,
+            };
+
+            Ok(Json(result))
+        }
     }
 }
 

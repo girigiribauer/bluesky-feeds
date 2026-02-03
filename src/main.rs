@@ -36,6 +36,13 @@ async fn main() -> anyhow::Result<()> {
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
     helloworld::migrate(&helloworld_db).await?;
 
+    // Initialize Fake Bluesky Database
+    let fakebluesky_db_url =
+        std::env::var("FAKEBLUESKY_DB_URL").unwrap_or_else(|_| "sqlite:fakebluesky.db".to_string());
+    tracing::info!("Connecting to fakebluesky database: {}", fakebluesky_db_url);
+    let fakebluesky_db = bluesky_feeds::connect_database(&fakebluesky_db_url).await?;
+    fakebluesky::migrate(&fakebluesky_db).await?;
+
     // Perform initial authentication
     let http_client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
@@ -68,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         auth_handle: handle,
         auth_password: password,
         helloworld_db,
+        fakebluesky_db,
     };
 
     // Start Jetstream consumer in background
@@ -76,8 +84,14 @@ async fn main() -> anyhow::Result<()> {
         let result = jetstream::connect_and_run(move |event| {
             let state = state_for_consumer.clone();
             async move {
-                let pool = state.helloworld_db.clone();
-                helloworld::process_event(&pool, event).await;
+                let helloworld_pool = state.helloworld_db.clone();
+                let fakebluesky_pool = state.fakebluesky_db.clone();
+
+                // Process event for helloworld
+                helloworld::process_event(&helloworld_pool, &event).await;
+
+                // Process event for fakebluesky
+                fakebluesky::process_event(&fakebluesky_pool, &event).await;
             }
         })
         .await;

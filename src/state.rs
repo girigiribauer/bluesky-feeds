@@ -20,6 +20,7 @@ pub struct AppState {
     pub auth_handle: String,
     pub auth_password: String,
     pub helloworld_db: SqlitePool,
+    pub fakebluesky_db: SqlitePool,
 }
 
 #[derive(Clone, Debug)]

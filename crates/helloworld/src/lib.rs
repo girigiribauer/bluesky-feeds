@@ -20,7 +20,7 @@ pub fn matches_hello_world(text: &str) -> bool {
     regex.is_match(text)
 }
 
-pub async fn process_event(pool: &SqlitePool, event: CommitEvent) {
+pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
     if let CommitEvent::Create { info, commit } = event {
         if let KnownRecord::AppBskyFeedPost(post) = &commit.record {
             let collection = commit.info.collection.as_str();

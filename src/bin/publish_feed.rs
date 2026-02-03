@@ -81,15 +81,21 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     },
     FeedServiceConfig {
         service: "todoapp",
-        display_name: "TODO feed",
+        display_name: "TODO",
         description: "Only your posts starting with `TODO` are displayed. Replying with `DONE` will remove them.\n\n`TODO` と頭につけた自分の投稿だけが表示されます。 `DONE` と返信すると消えます。",
         avatar: Some("assets/todoapp.png"),
     },
     FeedServiceConfig {
         service: "oneyearago",
-        display_name: "OneYearAgo feed",
+        display_name: "OneYearAgo",
         description: "Posts from exactly one year ago (±24 hours) are displayed.\n\nちょうど1年前の自分の投稿が表示されます（前後24時間）",
         avatar: Some("assets/oneyearago.png"),
+    },
+    FeedServiceConfig {
+        service: "fakebluesky",
+        display_name: "Fake Bluesky",
+        description: "Fake Bluesky feed\n\nBluesky と言いながら実は青空の写真ではないフィード",
+        avatar: None,
     },
 ];
 

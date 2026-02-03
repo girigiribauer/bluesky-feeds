@@ -42,7 +42,8 @@ async fn create_test_state() -> SharedState {
         })),
         auth_handle: "test.example.com".to_string(),
         auth_password: "dummy".to_string(),
-        helloworld_db: db,
+        helloworld_db: db.clone(),
+        fakebluesky_db: db,
     }
 }
 
