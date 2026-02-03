@@ -30,10 +30,7 @@ impl Default for BlueDetectionConfig {
 }
 
 /// Check if an image is a blue sky image
-pub async fn is_blue_sky_image(
-    image_url: &str,
-    config: &BlueDetectionConfig,
-) -> Result<bool> {
+pub async fn is_blue_sky_image(image_url: &str, config: &BlueDetectionConfig) -> Result<bool> {
     // Download and resize image with timeout
     let image = tokio::time::timeout(
         Duration::from_secs(5),
@@ -50,9 +47,7 @@ pub async fn is_blue_sky_image(
 /// Download image from URL and resize if needed
 async fn download_and_resize_image(url: &str, max_width: u32) -> Result<DynamicImage> {
     // Download image
-    let response = reqwest::get(url)
-        .await
-        .context("Failed to fetch image")?;
+    let response = reqwest::get(url).await.context("Failed to fetch image")?;
 
     let bytes = response
         .bytes()

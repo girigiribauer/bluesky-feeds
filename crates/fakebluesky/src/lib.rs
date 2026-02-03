@@ -142,9 +142,7 @@ pub async fn get_feed_skeleton(
 
     let feed: Vec<FeedItem> = posts
         .iter()
-        .map(|(uri, _)| FeedItem {
-            post: uri.clone(),
-        })
+        .map(|(uri, _)| FeedItem { post: uri.clone() })
         .collect();
 
     let cursor = if has_more {
@@ -208,21 +206,24 @@ async fn has_blue_sky_images(image_urls: &[String]) -> bool {
 }
 
 /// Extract image URLs from post record
-fn extract_image_urls(post: &atrium_api::app::bsky::feed::post::Record, did: &str) -> Option<Vec<String>> {
+fn extract_image_urls(
+    post: &atrium_api::app::bsky::feed::post::Record,
+    did: &str,
+) -> Option<Vec<String>> {
     use atrium_api::types::{BlobRef, TypedBlobRef, Union};
 
     let embed = post.embed.as_ref()?;
 
     // Try to extract images from embed
     match embed {
-        Union::Refs(atrium_api::app::bsky::feed::post::RecordEmbedRefs::AppBskyEmbedImagesMain(
-            images,
-        )) => {
+        Union::Refs(
+            atrium_api::app::bsky::feed::post::RecordEmbedRefs::AppBskyEmbedImagesMain(images),
+        ) => {
             // Extract CIDs from blob refs and construct CDN URLs
             let urls: Vec<String> = images
                 .images
                 .iter()
-                .filter_map(|img| {
+                .map(|img| {
                     // BlobRef is an enum with Typed and Untyped variants
                     let cid = match &img.image {
                         BlobRef::Typed(TypedBlobRef::Blob(blob)) => {
@@ -237,11 +238,10 @@ fn extract_image_urls(post: &atrium_api::app::bsky::feed::post::Record, did: &st
                     };
 
                     // Construct CDN URL
-                    Some(format!(
+                    format!(
                         "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
-                        did,
-                        cid
-                    ))
+                        did, cid
+                    )
                 })
                 .collect();
 

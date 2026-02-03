@@ -6,8 +6,6 @@ use bluesky_feeds::{
     app,
     state::{AppState, SharedState},
 };
-use helloworld;
-use reqwest;
 use serde_json::Value;
 use sqlx::{self};
 use std::sync::Arc;

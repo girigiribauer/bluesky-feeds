@@ -251,9 +251,11 @@ pub async fn get_feed_skeleton(
 
             // Convert to FeedSkeletonResult
             let result = models::FeedSkeletonResult {
-                feed: skeleton.feed.into_iter().map(|item| models::FeedItem {
-                    post: item.post,
-                }).collect(),
+                feed: skeleton
+                    .feed
+                    .into_iter()
+                    .map(|item| models::FeedItem { post: item.post })
+                    .collect(),
                 cursor: skeleton.cursor,
             };
 
