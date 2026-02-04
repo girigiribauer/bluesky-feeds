@@ -55,7 +55,10 @@ pub async fn is_blue_sky_image(image_url: &str, config: &BlueDetectionConfig) ->
 }
 
 /// Analyze image and return detailed results
-pub async fn analyze_image(image_url: &str, config: &BlueDetectionConfig) -> Result<AnalysisResult> {
+pub async fn analyze_image(
+    image_url: &str,
+    config: &BlueDetectionConfig,
+) -> Result<AnalysisResult> {
     // Download and resize image with timeout
     let image = tokio::time::timeout(
         Duration::from_secs(5),

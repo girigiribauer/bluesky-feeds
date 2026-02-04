@@ -28,8 +28,8 @@ async fn print_analysis(target: &str, config: &BlueDetectionConfig) -> Result<()
         // Assume local file
         let path = Path::new(target);
         if !path.exists() {
-             eprintln!("File not found: {}", target);
-             std::process::exit(1);
+            eprintln!("File not found: {}", target);
+            std::process::exit(1);
         }
         let img = image::open(path).context("Failed to open local image")?;
         perform_analysis(&img, config)
@@ -53,4 +53,3 @@ async fn print_analysis(target: &str, config: &BlueDetectionConfig) -> Result<()
 
     Ok(())
 }
-
