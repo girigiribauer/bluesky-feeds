@@ -748,6 +748,7 @@ dependencies = [
  "image",
  "jetstream",
  "jetstream-oxide",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

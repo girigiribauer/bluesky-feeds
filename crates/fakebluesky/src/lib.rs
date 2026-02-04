@@ -4,9 +4,10 @@ use anyhow::{Context, Result};
 use atrium_api::record::KnownRecord;
 use image_analyzer::{is_blue_sky_image, BlueDetectionConfig};
 use jetstream_oxide::events::commit::CommitEvent;
+use regex::Regex;
 use serde::Serialize;
 use sqlx::SqlitePool;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Semaphore;
 
 #[derive(Debug, Serialize)]
@@ -64,8 +65,20 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
             _ => return,
         };
 
-        // Filter by text content: must contain "bluesky" (case-insensitive)
-        if !post.text.to_lowercase().contains("bluesky") {
+        // Filter by text content
+        // 1. Remove all whitespace
+        // 2. Must start with "bluesky" (case-insensitive)
+        // 3. Can be followed only by punctuation and emojis
+
+        // Remove all whitespace
+        let cleaned_text: String = post.text.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Regex: (?i)^bluesky[\p{P}\p{S}]*$
+        static BLUESKY_REGEX: OnceLock<Regex> = OnceLock::new();
+        let regex =
+            BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
+
+        if !regex.is_match(&cleaned_text) {
             return;
         }
 
@@ -258,5 +271,40 @@ fn extract_image_urls(
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_bluesky_regex() {
+        use regex::Regex;
+        let regex = Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap();
+
+        // Helper to simulate whitespace removal
+        let check = |text: &str| -> bool {
+            let cleaned: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+            regex.is_match(&cleaned)
+        };
+
+        // Should match
+        assert!(check("bluesky"));
+        assert!(check("Bluesky"));
+        assert!(check("BLUESKY"));
+        assert!(check("blue sky")); // Becomes "bluesky"
+        assert!(check("Blue \n Sky")); // Becomes "BlueSky"
+        assert!(check("bluesky!"));
+        assert!(check("  bluesky  ")); // Becomes "bluesky"
+        assert!(check("bluesky✨"));
+        assert!(check("bluesky!!!!"));
+        assert!(check("bluesky🤗"));
+        assert!(check("bluesky..."));
+
+        // Should NOT match
+        assert!(!check("blue-sky")); // Hyphen remains -> "blue-sky" (no match)
+        assert!(!check("blue.sky")); // Dot remains -> "blue.sky" (no match)
+        assert!(!check("I love bluesky"));
+        assert!(!check("bluesky is great"));
+        assert!(!check("hello bluesky world"));
     }
 }
