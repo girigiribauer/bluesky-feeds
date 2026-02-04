@@ -75,7 +75,7 @@ const SERVICE_DID: &str = "did:web:feeds.bsky.girigiribauer.com";
 const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     FeedServiceConfig {
         service: "helloworld",
-        display_name: "Helloworld feed",
+        display_name: "Helloworld",
         description: "Healthcheck test feed\n\n死活監視を兼ねたテストフィードです",
         avatar: Some("assets/helloworld.png"),
     },
