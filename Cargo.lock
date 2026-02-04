@@ -309,6 +309,7 @@ dependencies = [
  "fakebluesky",
  "futures-util",
  "helloworld",
+ "image",
  "jetstream",
  "jetstream-oxide",
  "models",

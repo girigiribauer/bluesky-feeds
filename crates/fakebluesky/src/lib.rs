@@ -1,4 +1,4 @@
-mod image_analyzer;
+pub mod image_analyzer;
 
 use anyhow::{Context, Result};
 use atrium_api::record::KnownRecord;

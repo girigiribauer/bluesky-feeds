@@ -30,3 +30,22 @@ cargo run --bin unpublish_feed <feed_id>
 ```
 
 例: `cargo run --bin publish_feed oneyearago`
+
+## 開発者向けツール
+
+### Fake Bluesky 画像判定チェッカー
+
+特定の画像が Fake Bluesky の判定基準（青空成分の割合）に合致するかを確認するツールです。
+
+```bash
+# 使い方 (ファイルパス または URL)
+cargo run --bin check_image <image_path_or_url>
+
+# 例: ファイルパス
+cargo run --bin check_image ./test_images/fake_sky.jpg
+
+# 例: URL
+cargo run --bin check_image https://example.com/some_image.jpg
+```
+
+出力結果の `Blue Score` が `0.5` (50%) 未満であれば「Fake Bluesky」として採用 (ACCEPTED) されます。

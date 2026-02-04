@@ -29,8 +29,23 @@ impl Default for BlueDetectionConfig {
     }
 }
 
+/// Analysis result containing details
+#[derive(Debug, Clone)]
+pub struct AnalysisResult {
+    pub is_blue_sky: bool,
+    pub score: f32,
+    pub total_pixels: u32,
+    pub blue_pixels: u32,
+}
+
 /// Check if an image is a blue sky image
 pub async fn is_blue_sky_image(image_url: &str, config: &BlueDetectionConfig) -> Result<bool> {
+    let result = analyze_image(image_url, config).await?;
+    Ok(result.is_blue_sky)
+}
+
+/// Analyze image and return detailed results
+pub async fn analyze_image(image_url: &str, config: &BlueDetectionConfig) -> Result<AnalysisResult> {
     // Download and resize image with timeout
     let image = tokio::time::timeout(
         Duration::from_secs(5),
@@ -41,7 +56,7 @@ pub async fn is_blue_sky_image(image_url: &str, config: &BlueDetectionConfig) ->
     .context("Failed to download image")?;
 
     // Analyze top pixels
-    Ok(analyze_top_pixels(&image, config))
+    Ok(perform_analysis(&image, config))
 }
 
 /// Download image from URL and resize if needed
@@ -68,12 +83,17 @@ async fn download_and_resize_image(url: &str, max_width: u32) -> Result<DynamicI
 }
 
 /// Analyze top pixels of image to detect blue sky
-fn analyze_top_pixels(image: &DynamicImage, config: &BlueDetectionConfig) -> bool {
+pub fn perform_analysis(image: &DynamicImage, config: &BlueDetectionConfig) -> AnalysisResult {
     let (width, height) = image.dimensions();
     let top_height = (height as f32 * config.top_percentage) as u32;
 
     if top_height == 0 {
-        return false;
+        return AnalysisResult {
+            is_blue_sky: false,
+            score: 0.0,
+            total_pixels: 0,
+            blue_pixels: 0,
+        };
     }
 
     let mut total_pixels = 0;
@@ -98,7 +118,12 @@ fn analyze_top_pixels(image: &DynamicImage, config: &BlueDetectionConfig) -> boo
 
     // Calculate blue ratio
     let blue_ratio = blue_pixels as f32 / total_pixels as f32;
-    blue_ratio >= config.blue_threshold
+    AnalysisResult {
+        is_blue_sky: blue_ratio >= config.blue_threshold,
+        score: blue_ratio,
+        total_pixels,
+        blue_pixels,
+    }
 }
 
 /// Check if a single pixel is considered "blue"
@@ -115,6 +140,11 @@ fn is_blue_pixel(r: u8, g: u8, b: u8, config: &BlueDetectionConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Helper adapter for tests to match previous signature
+    fn analyze_top_pixels(image: &DynamicImage, config: &BlueDetectionConfig) -> bool {
+        perform_analysis(image, config).is_blue_sky
+    }
 
     /// テスト観点: 青色ピクセル判定の基本動作
     /// - 青色条件を満たすピクセルが正しく判定される

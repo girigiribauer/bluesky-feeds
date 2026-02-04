@@ -66,4 +66,5 @@ anyhow = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
+image = { workspace = true }
 dotenv = "0.15"
