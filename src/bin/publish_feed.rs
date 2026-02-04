@@ -76,7 +76,7 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     FeedServiceConfig {
         service: "helloworld",
         display_name: "Helloworld feed",
-        description: "固定投稿と hello world 投稿のテスト",
+        description: "Healthcheck test feed\n\n死活監視を兼ねたテストフィードです",
         avatar: Some("assets/helloworld.png"),
     },
     FeedServiceConfig {
@@ -88,7 +88,7 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     FeedServiceConfig {
         service: "oneyearago",
         display_name: "OneYearAgo",
-        description: "Posts from exactly one year ago (±24 hours) are displayed.\n\nちょうど1年前の自分の投稿が表示されます（前後24時間）",
+        description: "Shows posts from this day in past years.\nYou can specify timezone in bio (e.g. \"UTC-8\", \"Asia/Tokyo\").\n\n過去の今日の投稿を表示するフィードです。\n日本語話者と推定されると日本時間で表示されます。\nプロフィール内にタイムゾーンで指定も可能です。(\"UTC-8\", \"Asia/Tokyo\"）\n\nhttps://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
         avatar: Some("assets/oneyearago.png"),
     },
     FeedServiceConfig {
