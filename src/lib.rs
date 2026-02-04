@@ -23,16 +23,16 @@ pub fn app(state: SharedState) -> Router {
         .with_state(state)
 }
 
-pub async fn connect_database(url: &str) -> anyhow::Result<SqlitePool> {
-    // Ensure the database file exists if it's a file path
-    if url.starts_with("sqlite:") && !url.contains(":memory:") {
-        let path = url.trim_start_matches("sqlite:");
-        if !std::path::Path::new(path).exists() {
-            std::fs::File::create(path)?;
-        }
-    }
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use std::str::FromStr;
 
-    let pool = sqlx::sqlite::SqlitePoolOptions::new().connect(url).await?;
+pub async fn connect_database(url: &str) -> anyhow::Result<SqlitePool> {
+    let options = SqliteConnectOptions::from_str(url)?
+        .create_if_missing(true);
+
+    let pool = SqlitePoolOptions::new()
+        .connect_with(options)
+        .await?;
 
     Ok(pool)
 }
