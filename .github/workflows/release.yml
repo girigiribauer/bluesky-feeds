@@ -7,6 +7,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
       PATH_PREFIX: /var/www/
     permissions:
       contents: read
@@ -54,9 +56,18 @@ jobs:
       - name: GitHub Container Registry へログイン
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: コンテナ設定
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=build-${{ github.run_number }}
 
       - name: Rust アプリの Docker イメージをビルド・プッシュ
         uses: docker/build-push-action@v6
@@ -64,12 +75,10 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/feeds-bsky-rust:latest
-          platforms: linux/amd64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Deploy
+      - name: VPS へデプロイ
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           DOMAIN: ${{ secrets.DOMAIN }}
