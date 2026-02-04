@@ -11,15 +11,18 @@ struct ProfileResponse {
     description: Option<String>,
 }
 
+use chrono::{Offset, TimeZone};
+use chrono_tz::Tz;
+
 /// Bioのテキストからタイムゾーンをパースする（純粋関数）
 ///
 /// 優先順位:
-/// 1. 明示的な指定 (UTC+9, Asia/Tokyo)
-/// 2. 日本語文字検出 (ひらがな/カタカナ) -> JST
-/// 3. Default -> None (Caller should default to UTC)
+/// 1. 明示的な指定 (UTC+9, GMT-05:00)
+/// 2. IANA Timezone Identifier (e.g. "Asia/Tokyo", "America/New_York")
+/// 3. 日本語文字検出 (ひらがな/カタカナ) -> JST
+/// 4. Default -> None (Caller should default to UTC)
 fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
     // 1. Offsets: UTC+9, GMT-05:00
-    // Matches "UTC+9", "UTC-05:00", "GMT+9"
     let re_offset = Regex::new(r"(?i)(?:UTC|GMT)([\+\-]\d{1,2}(?::\d{2})?)").unwrap();
     if let Some(caps) = re_offset.captures(description) {
         if let Some(offset_str) = caps.get(1) {
@@ -42,10 +45,19 @@ fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
         }
     }
 
-    // 2. Keywords (Asia/Tokyo only)
-    let re_asia = Regex::new(r"(?i)Asia\/Tokyo").unwrap();
-    if re_asia.is_match(description) {
-        return Some(FixedOffset::east_opt(9 * 3600).unwrap());
+    // 2. IANA Timezone Identifier
+    // シンプルに単語を切り出して chrono-tz でパースできるか試す
+    // Bioには "Living in America/New_York" のように書かれることを想定
+    // 正規表現で「アルファベット、スラッシュ、アンダースコア」の塊を抽出して総当たりする
+    let re_iana = Regex::new(r"[a-zA-Z_]+/[a-zA-Z_]+").unwrap();
+    for mat in re_iana.find_iter(description) {
+        let candidate = mat.as_str();
+        if let Ok(tz) = candidate.parse::<Tz>() {
+            // 現在時刻におけるオフセットを取得 (夏時間などを考慮するため)
+            let now = chrono::Utc::now();
+            let offset = tz.offset_from_utc_date(&now.date_naive()).fix();
+            return Some(offset);
+        }
     }
 
     // 3. Japanese Content Detection (Hiragana/Katakana)
@@ -112,11 +124,18 @@ mod tests {
             Some(9 * 3600)
         );
 
-        // 2. Explicit Keyword
+        // 2. IANA Timezone Identifier
         assert_eq!(
             parse_timezone_description("Asia/Tokyo time").map(|o| o.local_minus_utc()),
             Some(9 * 3600)
         );
+        // "America/New_York" will be -5 (EST) or -4 (EDT) depending on the current date of the test runner.
+        // We just check that it parses to something non-zero and reasonable.
+        let ny_offset =
+            parse_timezone_description("I live in America/New_York").map(|o| o.local_minus_utc());
+        assert!(ny_offset.is_some());
+        let off = ny_offset.unwrap();
+        assert!(off == -18000 || off == -14400); // -5h or -4h
 
         // 3. Japanese Content (Hiragana/Katakana) -> JST
         assert_eq!(
@@ -147,7 +166,7 @@ mod tests {
         assert_eq!(
             parse_timezone_description("Tokyo, Japan").map(|o| o.local_minus_utc()),
             None
-        ); // Location intentionally ignored
+        ); // Location string "Tokyo, Japan" is NOT an IANA ID
         assert_eq!(
             parse_timezone_description("JST").map(|o| o.local_minus_utc()),
             None
