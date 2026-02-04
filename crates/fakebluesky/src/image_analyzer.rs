@@ -17,14 +17,24 @@ pub struct BlueDetectionConfig {
     pub max_width: u32,
 }
 
+/// 上方向が空と決め打ちして、上部どれだけを判定するかの割合
+const DEFAULT_TOP_PERCENTAGE: f32 = 0.3;
+/// 判定エリアのうちどれだけ青色判定したら青空とみなすかの割合
+const DEFAULT_BLUE_THRESHOLD: f32 = 0.5;
+/// 青は赤or緑に対してどれだけ明るいかの閾値、大きければ青判定が広くなる
+const DEFAULT_RGB_BLUE_RATIO: f32 = 1.18;
+
+const DEFAULT_MIN_BLUE_VALUE: u8 = 100;
+const DEFAULT_MAX_WIDTH: u32 = 600;
+
 impl Default for BlueDetectionConfig {
     fn default() -> Self {
         Self {
-            top_percentage: 0.3,
-            blue_threshold: 0.5,
-            rgb_blue_ratio: 1.2,
-            min_blue_value: 100,
-            max_width: 600,
+            top_percentage: DEFAULT_TOP_PERCENTAGE,
+            blue_threshold: DEFAULT_BLUE_THRESHOLD,
+            rgb_blue_ratio: DEFAULT_RGB_BLUE_RATIO,
+            min_blue_value: DEFAULT_MIN_BLUE_VALUE,
+            max_width: DEFAULT_MAX_WIDTH,
         }
     }
 }

@@ -15,10 +15,15 @@ async fn main() -> Result<()> {
     println!("Analyzing: {}", target);
 
     let config = BlueDetectionConfig::default();
+    print_analysis(target, &config).await?;
 
+    Ok(())
+}
+
+async fn print_analysis(target: &str, config: &BlueDetectionConfig) -> Result<()> {
     // Check if target is URL
     let result = if target.starts_with("http://") || target.starts_with("https://") {
-        analyze_image(target, &config).await?
+        analyze_image(target, config).await?
     } else {
         // Assume local file
         let path = Path::new(target);
@@ -27,7 +32,7 @@ async fn main() -> Result<()> {
              std::process::exit(1);
         }
         let img = image::open(path).context("Failed to open local image")?;
-        perform_analysis(&img, &config)
+        perform_analysis(&img, config)
     };
 
     println!("----------------------------------------");
@@ -37,6 +42,7 @@ async fn main() -> Result<()> {
     println!("Total Pixels (Top 30%): {}", result.total_pixels);
     println!("Blue Pixels: {}", result.blue_pixels);
     println!("Threshold: {:.2}", config.blue_threshold);
+    println!("Ratio: {:.1}", config.rgb_blue_ratio);
     println!("----------------------------------------");
 
     if result.is_blue_sky {
