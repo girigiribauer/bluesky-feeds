@@ -27,12 +27,9 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use std::str::FromStr;
 
 pub async fn connect_database(url: &str) -> anyhow::Result<SqlitePool> {
-    let options = SqliteConnectOptions::from_str(url)?
-        .create_if_missing(true);
+    let options = SqliteConnectOptions::from_str(url)?.create_if_missing(true);
 
-    let pool = SqlitePoolOptions::new()
-        .connect_with(options)
-        .await?;
+    let pool = SqlitePoolOptions::new().connect_with(options).await?;
 
     Ok(pool)
 }
