@@ -20,9 +20,9 @@ where
         wanted_dids: vec![],
         compression: JetstreamCompression::Zstd,
         cursor: None,
-        base_delay_ms: 5000, // Start with 5 seconds
-        max_delay_ms: 60000, // Max 60 seconds between retries
-        max_retries: 1440,   // Retry for 24 hours (1440 minutes)
+        base_delay_ms: 5000,  // Start with 5 seconds
+        max_delay_ms: 300000, // Max 5 minutes between retries
+        max_retries: 288,     // Retry for 24 hours (5 min × 288 = 24 hours)
         reset_retries_min_ms: 60000,
     };
 
