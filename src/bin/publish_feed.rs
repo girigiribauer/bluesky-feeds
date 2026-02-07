@@ -88,7 +88,7 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     FeedServiceConfig {
         service: "oneyearago",
         display_name: "OneYearAgo",
-        description: "Shows posts from this day in past years.\nYou can specify timezone in bio (e.g. \"UTC-8\", \"Asia/Tokyo\").\n\n過去の今日の投稿を表示するフィードです。\n日本語話者と推定されると日本時間で表示されます。\nプロフィール内にタイムゾーンで指定も可能です。(\"UTC-8\", \"Asia/Tokyo\"）\n\nhttps://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+        description: "Shows posts from this day in past years.\nYou can specify timezone in bio (e.g. \"UTC-8\", \"Asia/Tokyo\").\n\n過去の今日（1年前、2年前...）の投稿を表示するフィードです。\n日本語話者と推定されると日本時間で表示されます。\nプロフィール内にタイムゾーンで指定も可能です。(\"UTC-8\", \"Asia/Tokyo\"）\n\nhttps://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
         avatar: Some("assets/oneyearago.png"),
     },
     FeedServiceConfig {
