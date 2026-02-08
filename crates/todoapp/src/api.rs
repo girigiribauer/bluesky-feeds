@@ -1,6 +1,5 @@
-use crate::structs::{JwtPayload, PostView, SearchResponse, SessionResponse};
+use crate::structs::{PostView, SearchResponse, SessionResponse};
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 
 pub async fn authenticate(
@@ -65,48 +64,4 @@ pub async fn search_posts(
         .await
         .context("Failed to parse search response")?;
     Ok(search_res.posts)
-}
-
-pub fn extract_did_from_jwt(header: &str) -> Result<String> {
-    let parts: Vec<&str> = header.split_whitespace().collect();
-    if parts.len() != 2 || parts[0] != "Bearer" {
-        anyhow::bail!("Invalid Authorization header format");
-    }
-    let jwt = parts[1];
-    let components: Vec<&str> = jwt.split('.').collect();
-    if components.len() != 3 {
-        anyhow::bail!("Invalid JWT format");
-    }
-    let payload_part = components[1];
-
-    let decoded = general_purpose::URL_SAFE_NO_PAD
-        .decode(payload_part)
-        .or_else(|_| general_purpose::URL_SAFE.decode(payload_part))
-        .context("Failed to decode JWT payload")?;
-
-    let payload: JwtPayload =
-        serde_json::from_slice(&decoded).context("Failed to parse JWT payload")?;
-    Ok(payload.iss)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_did_from_jwt() {
-        // Mock a simple JWT (header.payload.signature)
-        // Payload: {"iss": "did:plc:12345", ...}
-        // Base64Url for payload: eyJpc3MiOiJkaWQ6cGxjOjEyMzQ1In0 ({"iss":"did:plc:12345"})
-
-        let valid_header = "Bearer header.eyJpc3MiOiJkaWQ6cGxjOjEyMzQ1In0.signature";
-        let did = extract_did_from_jwt(valid_header).expect("Should parse valid JWT");
-        assert_eq!(did, "did:plc:12345");
-
-        let invalid_format = "Basic auth";
-        assert!(extract_did_from_jwt(invalid_format).is_err());
-
-        let invalid_jwt = "Bearer invalid.jwt";
-        assert!(extract_did_from_jwt(invalid_jwt).is_err());
-    }
 }

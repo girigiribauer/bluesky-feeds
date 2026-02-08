@@ -6,5 +6,6 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 jetstream-oxide = { workspace = true }
+bsky_core = { workspace = true }
 atrium-api = { workspace = true }
 tracing = { workspace = true }

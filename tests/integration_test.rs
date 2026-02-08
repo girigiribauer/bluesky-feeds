@@ -42,6 +42,11 @@ async fn create_test_state() -> SharedState {
         auth_password: "dummy".to_string(),
         helloworld_db: db.clone(),
         fakebluesky_db: db,
+        umami: bluesky_feeds::analytics::UmamiClient::new(
+            "http://localhost:3000".to_string(),
+            "dummy_website_id".to_string(),
+            Some("localhost".to_string()),
+        ),
     }
 }
 

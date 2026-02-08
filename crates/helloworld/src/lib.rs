@@ -1,6 +1,6 @@
 use atrium_api::record::KnownRecord;
+use bsky_core::{FeedItem, FeedSkeletonResult};
 use jetstream_oxide::events::commit::CommitEvent;
-use models::{FeedItem, FeedSkeletonResult};
 use regex::Regex;
 use sqlx::{Row, SqlitePool};
 use std::sync::OnceLock;

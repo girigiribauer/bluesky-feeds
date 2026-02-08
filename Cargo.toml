@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/models",
+    "crates/core",
     "crates/jetstream",
     "crates/helloworld",
     "crates/todoapp",
@@ -38,6 +38,7 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
 regex = "1.10"
 image = "0.24"
+bsky_core = { path = "crates/core" }
 
 [lib]
 name = "bluesky_feeds"
@@ -52,7 +53,7 @@ tower = { workspace = true }
 tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-models = { path = "crates/models" }
+bsky_core = { path = "crates/core" }
 jetstream = { path = "crates/jetstream" }
 helloworld = { path = "crates/helloworld" }
 todoapp = { path = "crates/todoapp" }

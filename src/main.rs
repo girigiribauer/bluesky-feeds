@@ -76,6 +76,14 @@ async fn main() -> anyhow::Result<()> {
         auth_password: password,
         helloworld_db,
         fakebluesky_db,
+        umami: bluesky_feeds::analytics::UmamiClient::new(
+            std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
+            std::env::var("UMAMI_WEBSITE_ID").expect("UMAMI_WEBSITE_ID must be set"),
+            Some(
+                std::env::var("APP_HOSTNAME")
+                    .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
+            ),
+        ),
     };
 
     // Start Jetstream consumer in background

@@ -4,7 +4,7 @@ mod timezone;
 
 use crate::api::BlueskyFetcher;
 use anyhow::Result;
-use models::FeedSkeletonResult;
+use bsky_core::FeedSkeletonResult;
 use reqwest::Client;
 
 pub async fn get_feed_skeleton(

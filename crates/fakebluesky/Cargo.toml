@@ -16,6 +16,4 @@ regex = "1.10"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
-
-[dependencies.jetstream]
-path = "../jetstream"
+bsky_core = { path = "../core" }

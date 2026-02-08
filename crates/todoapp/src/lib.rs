@@ -3,7 +3,7 @@ pub mod logic;
 pub mod structs;
 
 use anyhow::{Context, Result};
-use models::FeedSkeletonResult;
+use bsky_core::FeedSkeletonResult;
 use reqwest::Client;
 
 pub use api::authenticate;
@@ -13,7 +13,8 @@ pub async fn get_feed_skeleton(
     user_jwt: &str,
     service_token: &str,
 ) -> Result<FeedSkeletonResult> {
-    let did = api::extract_did_from_jwt(user_jwt).context("Failed to extract DID from auth")?;
+    let did = bsky_core::extract_did_from_jwt(Some(user_jwt))
+        .context("Failed to extract DID from auth")?;
 
     // TODOとDONEを並列で取得して、後で紐づける
     let (todos_res, dones_res) = tokio::join!(

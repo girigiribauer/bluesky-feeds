@@ -1,7 +1,7 @@
 use crate::api::PostFetcher;
 use anyhow::Result;
+use bsky_core::FeedItem;
 use chrono::Utc;
-use models::FeedItem;
 
 const MIN_SEARCH_YEAR: i32 = 2023;
 const DEFAULT_LIMIT: usize = 30;

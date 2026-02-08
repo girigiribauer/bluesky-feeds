@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::Json,
 };
-use models::FeedService;
+use bsky_core::FeedService;
 
 pub async fn root() -> &'static str {
     "お試しで Bluesky のフィードを作っています https://github.com/girigiribauer/bluesky-feeds"
@@ -14,12 +14,47 @@ pub async fn get_feed_skeleton(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Query(params): Query<FeedQuery>,
-) -> Result<Json<models::FeedSkeletonResult>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
     tracing::info!(
         "Received feed request: {} (cursor={:?}, limit={:?})",
         params.feed,
         params.cursor,
         params.limit
+    );
+
+    // Analytics
+    let requester_did = match headers.get("authorization").and_then(|h| h.to_str().ok()) {
+        Some(header) => match bsky_core::extract_did_from_jwt(Some(header)) {
+            Ok(did) => did,
+            Err(e) => {
+                tracing::warn!("Failed to extract DID from Authorization header: {}", e);
+                "anonymous".to_string()
+            }
+        },
+        None => "anonymous".to_string(),
+    };
+
+    let language =
+        bsky_core::get_user_language(headers.get("accept-language").and_then(|h| h.to_str().ok()))
+            .unwrap_or_else(|| "en".to_string());
+
+    let cursor_state = if params.cursor.is_some() {
+        "exists"
+    } else {
+        "none"
+    };
+
+    let feed_path = format!("/feeds/{}", params.feed);
+    let event_data = serde_json::json!({
+        "did": requester_did,
+        "cursor": cursor_state,
+    });
+
+    state.umami.send_event(
+        feed_path,
+        "feed_view".to_string(),
+        Some(language),
+        Some(event_data),
     );
 
     let feed_name = params
@@ -32,241 +67,257 @@ pub async fn get_feed_skeleton(
         .ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
 
     match service {
-        FeedService::Helloworld => {
-            let _auth_header = headers
-                .get("authorization")
-                .and_then(|h| h.to_str().ok())
-                .ok_or((
-                    StatusCode::UNAUTHORIZED,
-                    "Missing or invalid authorization header".to_string(),
-                ))?;
+        FeedService::Helloworld => handle_helloworld(state, headers, params).await,
+        FeedService::Todoapp => handle_todoapp(state, headers, params).await,
+        FeedService::Oneyearago => handle_oneyearago(state, headers, params).await,
+        FeedService::Fakebluesky => handle_fakebluesky(state, params).await,
+    }
+}
 
-            let pool = state.helloworld_db.clone();
+async fn handle_helloworld(
+    state: SharedState,
+    headers: axum::http::HeaderMap,
+    params: FeedQuery,
+) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+    let _auth_header = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing or invalid authorization header".to_string(),
+        ))?;
 
-            let skeleton = helloworld::get_feed_skeleton(&pool, params.cursor, params.limit).await;
+    let pool = state.helloworld_db.clone();
+    let skeleton = helloworld::get_feed_skeleton(&pool, params.cursor, params.limit).await;
+    Ok(Json(skeleton))
+}
 
-            Ok(Json(skeleton))
-        }
-        FeedService::Todoapp => {
-            let auth_header = headers
-                .get("authorization")
-                .and_then(|h| h.to_str().ok())
-                .ok_or((
-                    StatusCode::UNAUTHORIZED,
-                    "Missing or invalid authorization header".to_string(),
-                ))?;
+async fn handle_todoapp(
+    state: SharedState,
+    headers: axum::http::HeaderMap,
+    _params: FeedQuery,
+) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing or invalid authorization header".to_string(),
+        ))?;
 
-            // Read client and current token
-            let (client, current_token) = {
-                let auth = state.service_auth.read().await;
-                (state.http_client.clone(), auth.token.clone())
-            };
+    // Read client and current token
+    let (client, current_token) = {
+        let auth = state.service_auth.read().await;
+        (state.http_client.clone(), auth.token.clone())
+    };
 
-            let token = current_token.ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Service not authenticated".to_string(),
-            ))?;
+    let token = current_token.ok_or((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Service not authenticated".to_string(),
+    ))?;
 
-            // First attempt
-            match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
-                Ok(res) => Ok(Json(res)),
-                Err(e) => {
-                    let err_msg = format!("{:?}", e);
-                    // Check if error is due to expired token (401 or specific message)
-                    if err_msg.contains("ExpiredToken")
-                        || err_msg.contains("401")
-                        || err_msg.contains("Unauthorized")
-                    {
-                        tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
-
-                        // RE-AUTHENTICATION LOGIC
-                        let handle = &state.auth_handle;
-                        let password = &state.auth_password;
-
-                        if !handle.is_empty() && !password.is_empty() {
-                            match todoapp::authenticate(&client, handle, password).await {
-                                Ok((new_token, new_did)) => {
-                                    tracing::info!("Token refresh successful (DID: {})", new_did);
-                                    // Update state with new token
-                                    {
-                                        let mut auth = state.service_auth.write().await;
-                                        auth.token = Some(new_token.clone());
-                                        auth.did = Some(new_did);
-                                    }
-
-                                    // Retry request with new token
-                                    match todoapp::get_feed_skeleton(
-                                        &client,
-                                        auth_header,
-                                        &new_token,
-                                    )
-                                    .await
-                                    {
-                                        Ok(res) => Ok(Json(res)),
-                                        Err(e2) => {
-                                            tracing::error!("Retry failed: {:#}", e2);
-                                            Err((
-                                                StatusCode::INTERNAL_SERVER_ERROR,
-                                                format!("Retry failed: {:#}", e2),
-                                            ))
-                                        }
-                                    }
-                                }
-                                Err(reauth_err) => {
-                                    tracing::error!("Re-authentication failed: {}", reauth_err);
-                                    Err((
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        "Re-authentication failed".to_string(),
-                                    ))
-                                }
-                            }
-                        } else {
-                            tracing::error!("Cannot refresh token: credentials missing");
-                            Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "Credentials missing for refresh".to_string(),
-                            ))
-                        }
-                    } else {
-                        // Other error
-                        tracing::error!("Todoapp error: {:#}", e);
-                        Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
-                    }
-                }
-            }
-        }
-        FeedService::Oneyearago => {
-            let auth_header = headers
-                .get("authorization")
-                .and_then(|h| h.to_str().ok())
-                .ok_or((
-                    StatusCode::UNAUTHORIZED,
-                    "Missing or invalid authorization header".to_string(),
-                ))?;
-
-            // Extract DID from JWT
-            let did = todoapp::api::extract_did_from_jwt(auth_header)
-                .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
-
-            // Read client and current token
-            let (client, current_token) = {
-                let auth = state.service_auth.read().await;
-                (state.http_client.clone(), auth.token.clone())
-            };
-
-            let token = current_token.ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Service not authenticated".to_string(),
-            ))?;
-
-            // First attempt
-            match oneyearago::get_feed_skeleton(
-                &client,
-                auth_header,
-                &token,
-                &did,
-                params.limit.unwrap_or(30),
-                params.cursor.clone(),
-            )
-            .await
+    // First attempt
+    match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => {
+            let err_msg = format!("{:?}", e);
+            // Check if error is due to expired token (401 or specific message)
+            if err_msg.contains("ExpiredToken")
+                || err_msg.contains("401")
+                || err_msg.contains("Unauthorized")
             {
-                Ok(res) => Ok(Json(res)),
-                Err(e) => {
-                    let err_msg = format!("{:?}", e);
-                    if err_msg.contains("ExpiredToken")
-                        || err_msg.contains("401")
-                        || err_msg.contains("Unauthorized")
-                    {
-                        tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
+                tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
-                        // RE-AUTHENTICATION LOGIC
-                        let handle = &state.auth_handle;
-                        let password = &state.auth_password;
+                // RE-AUTHENTICATION LOGIC
+                let handle = &state.auth_handle;
+                let password = &state.auth_password;
 
-                        if !handle.is_empty() && !password.is_empty() {
-                            match todoapp::authenticate(&client, handle, password).await {
-                                Ok((new_token, new_did)) => {
-                                    tracing::info!("Token refresh successful (DID: {})", new_did);
-                                    // Update state with new token
-                                    {
-                                        let mut auth = state.service_auth.write().await;
-                                        auth.token = Some(new_token.clone());
-                                        auth.did = Some(new_did);
-                                    }
+                if !handle.is_empty() && !password.is_empty() {
+                    match todoapp::authenticate(&client, handle, password).await {
+                        Ok((new_token, new_did)) => {
+                            tracing::info!("Token refresh successful (DID: {})", new_did);
+                            // Update state with new token
+                            {
+                                let mut auth = state.service_auth.write().await;
+                                auth.token = Some(new_token.clone());
+                                auth.did = Some(new_did);
+                            }
 
-                                    // Retry request with new token
-                                    match oneyearago::get_feed_skeleton(
-                                        &client,
-                                        auth_header,
-                                        &new_token,
-                                        &did,
-                                        params.limit.unwrap_or(30),
-                                        params.cursor.clone(),
-                                    )
-                                    .await
-                                    {
-                                        Ok(res) => Ok(Json(res)),
-                                        Err(e2) => {
-                                            tracing::error!("Retry failed: {:#}", e2);
-                                            Err((
-                                                StatusCode::INTERNAL_SERVER_ERROR,
-                                                format!("Retry failed: {:#}", e2),
-                                            ))
-                                        }
-                                    }
-                                }
-                                Err(reauth_err) => {
-                                    tracing::error!("Re-authentication failed: {}", reauth_err);
+                            // Retry request with new token
+                            match todoapp::get_feed_skeleton(&client, auth_header, &new_token).await
+                            {
+                                Ok(res) => Ok(Json(res)),
+                                Err(e2) => {
+                                    tracing::error!("Retry failed: {:#}", e2);
                                     Err((
                                         StatusCode::INTERNAL_SERVER_ERROR,
-                                        "Re-authentication failed".to_string(),
+                                        format!("Retry failed: {:#}", e2),
                                     ))
                                 }
                             }
-                        } else {
-                            tracing::error!("Cannot refresh token: credentials missing");
+                        }
+                        Err(reauth_err) => {
+                            tracing::error!("Re-authentication failed: {}", reauth_err);
                             Err((
                                 StatusCode::INTERNAL_SERVER_ERROR,
-                                "Credentials missing for refresh".to_string(),
+                                "Re-authentication failed".to_string(),
                             ))
                         }
-                    } else {
-                        tracing::error!("Oneyearago error: {:#}", e);
-                        Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
                     }
+                } else {
+                    tracing::error!("Cannot refresh token: credentials missing");
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Credentials missing for refresh".to_string(),
+                    ))
                 }
+            } else {
+                // Other error
+                tracing::error!("Todoapp error: {:#}", e);
+                Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
             }
-        }
-        FeedService::Fakebluesky => {
-            let skeleton = fakebluesky::get_feed_skeleton(
-                &state.fakebluesky_db,
-                params.limit.unwrap_or(30),
-                params.cursor.clone(),
-            )
-            .await
-            .map_err(|e| {
-                tracing::error!("Fakebluesky error: {:#}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e))
-            })?;
-
-            // Convert to FeedSkeletonResult
-            let result = models::FeedSkeletonResult {
-                feed: skeleton
-                    .feed
-                    .into_iter()
-                    .map(|item| models::FeedItem { post: item.post })
-                    .collect(),
-                cursor: skeleton.cursor,
-            };
-
-            Ok(Json(result))
         }
     }
 }
 
+async fn handle_oneyearago(
+    state: SharedState,
+    headers: axum::http::HeaderMap,
+    params: FeedQuery,
+) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+    let auth_header = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .ok_or((
+            StatusCode::UNAUTHORIZED,
+            "Missing or invalid authorization header".to_string(),
+        ))?;
+
+    // Extract DID from JWT
+    let did = bsky_core::extract_did_from_jwt(Some(auth_header))
+        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+
+    // Read client and current token
+    let (client, current_token) = {
+        let auth = state.service_auth.read().await;
+        (state.http_client.clone(), auth.token.clone())
+    };
+
+    let token = current_token.ok_or((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Service not authenticated".to_string(),
+    ))?;
+
+    // First attempt
+    match oneyearago::get_feed_skeleton(
+        &client,
+        auth_header,
+        &token,
+        &did,
+        params.limit.unwrap_or(30),
+        params.cursor.clone(),
+    )
+    .await
+    {
+        Ok(res) => Ok(Json(res)),
+        Err(e) => {
+            let err_msg = format!("{:?}", e);
+            if err_msg.contains("ExpiredToken")
+                || err_msg.contains("401")
+                || err_msg.contains("Unauthorized")
+            {
+                tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
+
+                // RE-AUTHENTICATION LOGIC
+                let handle = &state.auth_handle;
+                let password = &state.auth_password;
+
+                if !handle.is_empty() && !password.is_empty() {
+                    match todoapp::authenticate(&client, handle, password).await {
+                        Ok((new_token, new_did)) => {
+                            tracing::info!("Token refresh successful (DID: {})", new_did);
+                            // Update state with new token
+                            {
+                                let mut auth = state.service_auth.write().await;
+                                auth.token = Some(new_token.clone());
+                                auth.did = Some(new_did);
+                            }
+
+                            // Retry request with new token
+                            match oneyearago::get_feed_skeleton(
+                                &client,
+                                auth_header,
+                                &new_token,
+                                &did,
+                                params.limit.unwrap_or(30),
+                                params.cursor.clone(),
+                            )
+                            .await
+                            {
+                                Ok(res) => Ok(Json(res)),
+                                Err(e2) => {
+                                    tracing::error!("Retry failed: {:#}", e2);
+                                    Err((
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        format!("Retry failed: {:#}", e2),
+                                    ))
+                                }
+                            }
+                        }
+                        Err(reauth_err) => {
+                            tracing::error!("Re-authentication failed: {}", reauth_err);
+                            Err((
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Re-authentication failed".to_string(),
+                            ))
+                        }
+                    }
+                } else {
+                    tracing::error!("Cannot refresh token: credentials missing");
+                    Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Credentials missing for refresh".to_string(),
+                    ))
+                }
+            } else {
+                tracing::error!("Oneyearago error: {:#}", e);
+                Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
+            }
+        }
+    }
+}
+
+async fn handle_fakebluesky(
+    state: SharedState,
+    params: FeedQuery,
+) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+    let skeleton = fakebluesky::get_feed_skeleton(
+        &state.fakebluesky_db,
+        params.limit.unwrap_or(30),
+        params.cursor.clone(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!("Fakebluesky error: {:#}", e);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e))
+    })?;
+
+    // Convert to FeedSkeletonResult
+    let result = bsky_core::FeedSkeletonResult {
+        feed: skeleton
+            .feed
+            .into_iter()
+            .map(|item| bsky_core::FeedItem { post: item.post })
+            .collect(),
+        cursor: skeleton.cursor,
+    };
+
+    Ok(Json(result))
+}
+
 pub async fn describe_feed_generator(
     State(state): State<SharedState>,
-) -> Result<Json<models::DescribeFeedGeneratorResponse>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::DescribeFeedGeneratorResponse>, (StatusCode, String)> {
     let (did, _service_did) = {
         let auth = state.service_auth.read().await;
         // Authenticated Service DID (from .env/auth) or default from context if we hardcoded it?
@@ -279,21 +330,24 @@ pub async fn describe_feed_generator(
     };
 
     let feeds = vec![
-        models::FeedUri {
+        bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/helloworld", did),
         },
-        models::FeedUri {
+        bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/todoapp", did),
         },
-        models::FeedUri {
+        bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/oneyearago", did),
         },
-        models::FeedUri {
+        bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/fakebluesky", did),
         },
     ];
 
-    Ok(Json(models::DescribeFeedGeneratorResponse { did, feeds }))
+    Ok(Json(bsky_core::DescribeFeedGeneratorResponse {
+        did,
+        feeds,
+    }))
 }
 
 #[derive(serde::Serialize)]

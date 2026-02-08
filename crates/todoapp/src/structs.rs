@@ -29,11 +29,6 @@ pub struct Link {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct JwtPayload {
-    pub iss: String,
-}
-
-#[derive(Deserialize, Debug)]
 pub struct SessionResponse {
     #[serde(rename = "accessJwt")]
     pub access_jwt: String,

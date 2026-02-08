@@ -21,6 +21,7 @@ pub struct AppState {
     pub auth_password: String,
     pub helloworld_db: SqlitePool,
     pub fakebluesky_db: SqlitePool,
+    pub umami: crate::analytics::UmamiClient,
 }
 
 #[derive(Clone, Debug)]

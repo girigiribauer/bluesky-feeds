@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod handlers;
 pub mod state;
 

@@ -1,5 +1,5 @@
 use crate::structs::{PostView, Record};
-use models::FeedItem;
+use bsky_core::FeedItem;
 use std::collections::HashSet;
 
 pub fn filter_todos(todos: Vec<PostView>, dones: Vec<PostView>) -> Vec<FeedItem> {

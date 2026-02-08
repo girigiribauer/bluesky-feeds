@@ -16,8 +16,8 @@ atrium-api = { workspace = true }
 async-trait = "0.1.89"
 chrono-tz = "0.9"
 
-[dependencies.models]
-path = "../../crates/models"
+[dependencies.bsky_core]
+path = "../../crates/core"
 
 [dev-dependencies]
 mockall = "0.14.0"
