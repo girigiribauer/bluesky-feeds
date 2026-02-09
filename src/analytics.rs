@@ -54,7 +54,7 @@ impl UmamiClient {
         let client = self.client.clone();
         let host = self.host.clone();
         let payload = EventPayload {
-            event_type: "event".to_string(),
+            event_type: "pageview".to_string(),
             payload: EventData {
                 website: self.website_id.clone(),
                 hostname: self.hostname.clone(),
@@ -65,19 +65,35 @@ impl UmamiClient {
             },
         };
 
-        // Fire and forget
         tokio::spawn(async move {
             let endpoint = format!("{}/api/send", host);
-            if let Err(e) = client
+            match client
                 .post(&endpoint)
                 .json(&payload)
-                .header("User-Agent", "BlueskyFeedGenerator/1.0 (girigiribauer.com)")
+                // Umami に弾かれないようにするためにUser-Agentを偽装する
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
                 .send()
                 .await
             {
-                tracing::warn!("Failed to send analytics event: {}", e);
-            } else {
-                tracing::debug!("Analytics event sent successfully");
+                Ok(response) => {
+                    if !response.status().is_success() {
+                        let status = response.status();
+                        let text = response.text().await.unwrap_or_default();
+                        tracing::warn!(
+                            "Umami returned error: status={}, body={}",
+                            status,
+                            text
+                        );
+                    } else {
+                        tracing::debug!("Analytics event sent successfully");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to send analytics event: {}", e);
+                }
             }
         });
     }
