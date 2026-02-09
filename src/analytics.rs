@@ -54,7 +54,7 @@ impl UmamiClient {
         let client = self.client.clone();
         let host = self.host.clone();
         let payload = EventPayload {
-            event_type: "pageview".to_string(),
+            event_type: "event".to_string(),
             payload: EventData {
                 website: self.website_id.clone(),
                 hostname: self.hostname.clone(),

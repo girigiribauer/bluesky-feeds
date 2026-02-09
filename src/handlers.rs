@@ -44,16 +44,24 @@ pub async fn get_feed_skeleton(
         "none"
     };
 
-    let feed_path = format!("/feeds/{}", params.feed);
+    // Construct URL with query parameters for easier filtering in Umami
+    let feed_path = format!(
+        "/feeds/{}?did={}&cursor={}&language={}",
+        params.feed, requester_did, cursor_state, language
+    );
+
     let event_data = serde_json::json!({
         "did": requester_did,
         "cursor": cursor_state,
+        "language": language,
     });
 
-    state
-        .umami
-        .send_event(feed_path, None, Some(language), Some(event_data));
-
+    state.umami.send_event(
+        feed_path,
+        None,
+        Some(language.clone()), // Clone language as it's used above
+        Some(event_data),
+    );
     let feed_name = params
         .feed
         .split('/')
