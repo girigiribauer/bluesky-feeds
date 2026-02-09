@@ -44,10 +44,16 @@ pub async fn get_feed_skeleton(
         "none"
     };
 
+    let feed_name = params
+        .feed
+        .split('/')
+        .next_back()
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed URI".to_string()))?;
+
     // Construct URL with query parameters for easier filtering in Umami
     let feed_path = format!(
         "/feeds/{}?did={}&cursor={}&language={}",
-        params.feed, requester_did, cursor_state, language
+        feed_name, requester_did, cursor_state, language
     );
 
     let event_data = serde_json::json!({
@@ -62,11 +68,6 @@ pub async fn get_feed_skeleton(
         Some(language.clone()), // Clone language as it's used above
         Some(event_data),
     );
-    let feed_name = params
-        .feed
-        .split('/')
-        .next_back()
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed URI".to_string()))?;
 
     let service = FeedService::from_str(feed_name)
         .ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
