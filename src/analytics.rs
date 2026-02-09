@@ -27,7 +27,15 @@ struct EventData {
 }
 
 impl UmamiClient {
-    pub fn new(host: String, website_id: String, hostname: Option<String>) -> Self {
+    pub fn new(mut host: String, website_id: String, hostname: Option<String>) -> Self {
+        if !host.starts_with("http://") && !host.starts_with("https://") {
+            host = format!("https://{}", host);
+        }
+        // Remove trailing slash if present
+        if host.ends_with('/') {
+            host.pop();
+        }
+
         Self {
             client: Client::new(),
             host,
