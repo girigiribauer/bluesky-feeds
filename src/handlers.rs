@@ -51,10 +51,7 @@ pub async fn get_feed_skeleton(
         .ok_or((StatusCode::BAD_REQUEST, "Invalid feed URI".to_string()))?;
 
     // Construct URL with query parameters for easier filtering in Umami
-    let feed_path = format!(
-        "/feeds/{}?did={}&cursor={}&language={}",
-        feed_name, requester_did, cursor_state, language
-    );
+    let feed_path = format!("/feeds/{}?did={}", feed_name, requester_did);
 
     let event_data = serde_json::json!({
         "did": requester_did,
