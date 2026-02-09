@@ -21,6 +21,7 @@ struct EventData {
     website: String,
     hostname: Option<String>,
     url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     language: Option<String>,
     data: Option<serde_json::Value>,
