@@ -21,7 +21,7 @@ struct EventData {
     website: String,
     hostname: Option<String>,
     url: String,
-    name: String,
+    name: Option<String>,
     language: Option<String>,
     data: Option<serde_json::Value>,
 }
@@ -47,7 +47,7 @@ impl UmamiClient {
     pub fn send_event(
         &self,
         url: String,
-        event_name: String,
+        event_name: Option<String>,
         language: Option<String>,
         data: Option<serde_json::Value>,
     ) {

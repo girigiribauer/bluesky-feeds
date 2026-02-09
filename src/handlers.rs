@@ -50,12 +50,9 @@ pub async fn get_feed_skeleton(
         "cursor": cursor_state,
     });
 
-    state.umami.send_event(
-        feed_path,
-        "feed_view".to_string(),
-        Some(language),
-        Some(event_data),
-    );
+    state
+        .umami
+        .send_event(feed_path, None, Some(language), Some(event_data));
 
     let feed_name = params
         .feed
