@@ -24,6 +24,8 @@ struct EventData {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
     language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
     data: Option<serde_json::Value>,
 }
 
@@ -49,6 +51,7 @@ impl UmamiClient {
         &self,
         url: String,
         event_name: Option<String>,
+        session_id: Option<String>,
         language: Option<String>,
         data: Option<serde_json::Value>,
     ) {
@@ -62,6 +65,7 @@ impl UmamiClient {
                 url,
                 name: event_name,
                 language,
+                id: session_id,
                 data,
             },
         };

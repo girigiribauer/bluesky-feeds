@@ -62,6 +62,7 @@ pub async fn get_feed_skeleton(
     state.umami.send_event(
         feed_path,
         None,
+        Some(requester_did.clone()),
         Some(language.clone()), // Clone language as it's used above
         Some(event_data),
     );
