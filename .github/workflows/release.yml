@@ -9,7 +9,6 @@ jobs:
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository }}
-      PATH_PREFIX: /var/www/
     permissions:
       contents: read
       packages: write
