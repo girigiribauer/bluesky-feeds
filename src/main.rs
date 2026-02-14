@@ -29,19 +29,26 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Initialize Database
-    let database_url =
-        std::env::var("HELLOWORLD_DB_URL").unwrap_or_else(|_| "sqlite:helloworld.db".to_string());
+    let database_url = std::env::var("HELLOWORLD_DB_URL")
+        .unwrap_or_else(|_| "sqlite:data/helloworld.db".to_string());
     tracing::info!("Connecting to database: {}", database_url);
 
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
     helloworld::migrate(&helloworld_db).await?;
 
     // Initialize Fake Bluesky Database
-    let fakebluesky_db_url =
-        std::env::var("FAKEBLUESKY_DB_URL").unwrap_or_else(|_| "sqlite:fakebluesky.db".to_string());
+    let fakebluesky_db_url = std::env::var("FAKEBLUESKY_DB_URL")
+        .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
     tracing::info!("Connecting to fakebluesky database: {}", fakebluesky_db_url);
     let fakebluesky_db = bluesky_feeds::connect_database(&fakebluesky_db_url).await?;
     fakebluesky::migrate(&fakebluesky_db).await?;
+
+    // Initialize Private List Database
+    let privatelist_db_url = std::env::var("PRIVATELIST_DB_URL")
+        .unwrap_or_else(|_| "sqlite:data/privatelist.db".to_string());
+    tracing::info!("Connecting to privatelist database: {}", privatelist_db_url);
+    let privatelist_db = bluesky_feeds::connect_database(&privatelist_db_url).await?;
+    privatelist::migrate(&privatelist_db).await?;
 
     // Perform initial authentication
     let http_client = reqwest::Client::builder()
@@ -76,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         auth_password: password,
         helloworld_db,
         fakebluesky_db,
+        privatelist_db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
             std::env::var("UMAMI_WEBSITE_ID").expect("UMAMI_WEBSITE_ID must be set"),
@@ -84,30 +92,37 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
             ),
         ),
+        privatelist_url: std::env::var("PRIVATELIST_URL")
+            .unwrap_or_else(|_| "https://api.bsky.app".to_string()),
     };
 
     // Start Jetstream consumer in background
-    let state_for_consumer = app_state.clone();
-    tokio::spawn(async move {
-        let result = jetstream::connect_and_run(move |event| {
-            let state = state_for_consumer.clone();
-            async move {
-                let helloworld_pool = state.helloworld_db.clone();
-                let fakebluesky_pool = state.fakebluesky_db.clone();
+    let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
+    if enable_jetstream == "true" {
+        let state_for_consumer = app_state.clone();
+        tokio::spawn(async move {
+            let result = jetstream::connect_and_run(move |event| {
+                let state = state_for_consumer.clone();
+                async move {
+                    let helloworld_pool = state.helloworld_db.clone();
+                    let fakebluesky_pool = state.fakebluesky_db.clone();
 
-                // Process event for helloworld
-                helloworld::process_event(&helloworld_pool, &event).await;
+                    // Process event for helloworld
+                    helloworld::process_event(&helloworld_pool, &event).await;
 
-                // Process event for fakebluesky
-                fakebluesky::process_event(&fakebluesky_pool, &event).await;
+                    // Process event for fakebluesky
+                    fakebluesky::process_event(&fakebluesky_pool, &event).await;
+                }
+            })
+            .await;
+
+            if let Err(e) = result {
+                tracing::error!("Jetstream ingester failed: {}", e);
             }
-        })
-        .await;
-
-        if let Err(e) = result {
-            tracing::error!("Jetstream ingester failed: {}", e);
-        }
-    });
+        });
+    } else {
+        tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");
+    }
 
     let port = std::env::var("PORT")
         .ok()

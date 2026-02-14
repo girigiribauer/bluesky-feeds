@@ -20,6 +20,7 @@ pub enum FeedService {
     Todoapp,
     Oneyearago,
     Fakebluesky,
+    Privatelist,
 }
 
 impl FeedService {
@@ -30,6 +31,7 @@ impl FeedService {
             "todoapp" => Some(Self::Todoapp),
             "oneyearago" => Some(Self::Oneyearago),
             "fakebluesky" => Some(Self::Fakebluesky),
+            "privatelist" => Some(Self::Privatelist),
             _ => None,
         }
     }
@@ -40,6 +42,7 @@ impl FeedService {
             Self::Todoapp => "todoapp",
             Self::Oneyearago => "oneyearago",
             Self::Fakebluesky => "fakebluesky",
+            Self::Privatelist => "privatelist",
         }
     }
 }

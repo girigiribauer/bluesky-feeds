@@ -20,16 +20,41 @@ Bluesky のフィード置き場です
   - jetstream へ接続してみる用
   - https://docs.bsky.app/blog/jetstream
 
+## ローカルでの実行
+
+`.env` ファイルに認証情報などが設定されていることを確認の上、以下のコマンドで起動します。
+
+```bash
+make dev
+# または
+cargo run
+```
+
+サーバーは `http://localhost:3000` で起動します。
+管理UI (Frontend) は `http://localhost:3001` で起動します。
+
+## テストの実行
+
+```bash
+# 全テスト実行 (fmt, lint 含む)
+make test
+
+# 個別実行
+make test-all         # テストのみ (Unit + Integration)
+make test-unit        # ユニットテストのみ
+make test-integration # 統合テストのみ
+```
+
 ## 公開・取り消しする (Rust)
 
 ```bash
 # 公開・更新
-cargo run --bin publish_feed <feed_id>
-# 削除
-cargo run --bin unpublish_feed <feed_id>
-```
+make publish FEED=<feed_id>
+# 例: make publish FEED=helloworld
 
-例: `cargo run --bin publish_feed oneyearago`
+# 削除
+make unpublish FEED=<feed_id>
+```
 
 ## 開発者向けツール
 
@@ -38,14 +63,9 @@ cargo run --bin unpublish_feed <feed_id>
 特定の画像が Fake Bluesky の判定基準（青空成分の割合）に合致するかを確認するツールです。
 
 ```bash
-# 使い方 (ファイルパス または URL)
-cargo run --bin check_image <image_path_or_url>
-
-# 例: ファイルパス
-cargo run --bin check_image ./test_images/fake_sky.jpg
-
-# 例: URL
-cargo run --bin check_image https://example.com/some_image.jpg
+# 使い方
+make check-image IMAGE=<image_path_or_url>
+# 例: make check-image IMAGE=./test.jpg
 ```
 
 出力結果の `Blue Score` が `0.5` (50%) 未満であれば「Fake Bluesky」として採用 (ACCEPTED) されます。

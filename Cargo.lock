@@ -321,6 +321,7 @@ dependencies = [
  "jetstream",
  "jetstream-oxide",
  "oneyearago",
+ "privatelist",
  "reqwest",
  "serde",
  "serde_json",
@@ -2156,6 +2157,21 @@ checksum = "72dd2d6d381dfb73a193c7fca536518d7caee39fc8503f74e7dc0be0531b425c"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "privatelist"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bsky_core",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
