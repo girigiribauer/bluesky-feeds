@@ -69,3 +69,6 @@ chrono = { workspace = true }
 sqlx = { workspace = true }
 image = { workspace = true }
 dotenv = "0.15"
+
+[dev-dependencies]
+base64 = "0.21"

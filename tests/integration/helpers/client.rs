@@ -1,0 +1,156 @@
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+    Router,
+};
+use bluesky_feeds::{
+    app,
+    state::{AppState, SharedState},
+};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tower::ServiceExt; // for oneshot
+                       // use tower::Service; // removed unused import
+
+pub struct TestClient {
+    router: Router,
+}
+
+impl TestClient {
+    pub async fn new() -> Self {
+        let state = create_test_state().await;
+        let router = app(state);
+        Self { router }
+    }
+
+    pub async fn get_feed_skeleton(
+        &self,
+        feed_uri: &str,
+        auth_header: Option<&str>,
+    ) -> (StatusCode, serde_json::Value) {
+        let mut req_builder = Request::builder()
+            .uri(format!(
+                "/xrpc/app.bsky.feed.getFeedSkeleton?feed={}",
+                feed_uri
+            ))
+            .method("GET");
+
+        if let Some(token) = auth_header {
+            req_builder = req_builder.header("Authorization", token);
+        }
+
+        let request = req_builder.body(Body::empty()).unwrap();
+
+        // Router implements Service<Request, Response=Response, Error=Infallible>
+        // We need to clone it because oneshot consumes self, or we use a fresh router for each test if cheap.
+        // Actually Router is cheap to clone.
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("Request failed");
+
+        let status = response.status();
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+
+        let body_json: serde_json::Value = if body_bytes.is_empty() {
+            serde_json::json!(null)
+        } else {
+            serde_json::from_slice(&body_bytes).unwrap_or_else(
+                |_| serde_json::json!({ "raw": String::from_utf8_lossy(&body_bytes) }),
+            )
+        };
+
+        (status, body_json)
+    }
+
+    pub async fn get_health(&self) -> (StatusCode, String) {
+        let request = Request::builder()
+            .uri("/health")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("Request failed");
+        let status = response.status();
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+
+        (status, String::from_utf8_lossy(&body_bytes).to_string())
+    }
+
+    pub async fn get_did_json(&self) -> (StatusCode, serde_json::Value) {
+        let request = Request::builder()
+            .uri("/.well-known/did.json")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = self
+            .router
+            .clone()
+            .oneshot(request)
+            .await
+            .expect("Request failed");
+        let status = response.status();
+        let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+
+        let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        (status, body_json)
+    }
+}
+
+async fn create_test_state() -> SharedState {
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+
+    // Run migrations or schema creation
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS helloworld_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS fake_bluesky_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+
+    AppState {
+        helloworld: helloworld::State::default(),
+        http_client: reqwest::Client::new(),
+        service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
+            token: Some("mock_service_token_for_testing".to_string()),
+            did: Some("did:plc:test123456789".to_string()),
+        })),
+        auth_handle: "test.example.com".to_string(),
+        auth_password: "dummy".to_string(),
+        helloworld_db: db.clone(),
+        fakebluesky_db: db,
+        umami: bluesky_feeds::analytics::UmamiClient::new(
+            "http://localhost:3000".to_string(),
+            "dummy_website_id".to_string(),
+            Some("localhost".to_string()),
+        ),
+    }
+}
