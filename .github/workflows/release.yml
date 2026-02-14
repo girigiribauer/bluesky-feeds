@@ -3,16 +3,14 @@ on:
   push:
     branches:
       - main
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
-    permissions:
-      contents: read
-      packages: write
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
+jobs:
+  check:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -40,14 +38,29 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run tests
-        run: cargo test --all-features --verbose
-
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Run clippy
         run: cargo clippy --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features --verbose
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Docker Buildx のセットアップ
         uses: docker/setup-buildx-action@v3
