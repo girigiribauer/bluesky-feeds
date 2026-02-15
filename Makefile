@@ -6,6 +6,10 @@ dev:
 	mkdir -p data
 	set -a && . ./.env && set +a && RUST_LOG=info cargo run --bin bluesky-feeds
 
+# Run frontend dev server (UI)
+dev-webui:
+	cd webui && npm run dev
+
 # Run all tests (Unit + Integration)
 test-all:
 	cargo test
