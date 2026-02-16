@@ -2,15 +2,20 @@ use axum::{extract::Query, response::IntoResponse, Json};
 use axum_extra::extract::cookie::{Cookie, SameSite, SignedCookieJar};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::Rng;
-use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::env;
 use time::Duration;
 
+use p256::ecdsa::signature::Signer;
+use p256::ecdsa::SigningKey;
+use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey};
+use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
+
 fn get_privatelist_url() -> String {
     env::var("PRIVATELIST_URL")
-        .unwrap_or_else(|_| "https://feeds.bsky.girigiribauer.com".to_string())
+        .unwrap_or_else(|_| "https://privatelist.bsky.girigiribauer.com".to_string())
 }
 
 pub async fn client_metadata() -> impl IntoResponse {
@@ -31,7 +36,7 @@ pub async fn client_metadata() -> impl IntoResponse {
         "response_types": ["code"],
         "application_type": "web",
         "token_endpoint_auth_method": "none",
-        "dpop_bound_access_tokens": false
+        "dpop_bound_access_tokens": true
     });
 
     Json(metadata)
@@ -58,14 +63,21 @@ pub async fn login(jar: SignedCookieJar) -> impl IntoResponse {
     hasher.update(code_verifier.as_bytes());
     let code_challenge = URL_SAFE_NO_PAD.encode(hasher.finalize());
 
-    // 3. Store in *Signed* Cookie (Stateless)
-    // We combine state and verifier potentially, or store separate cookies.
-    // Storing check:
-    let cookie_val = serde_json::json!({
-        "state": state,
-        "verifier": code_verifier
+    // 3. Generate DPoP Key Pair (P-256)
+    let signing_key = SigningKey::random(&mut OsRng);
+    let private_key_pem = signing_key
+        .to_pkcs8_pem(p256::pkcs8::LineEnding::LF)
+        .unwrap()
+        .to_string();
+
+    // 4. Store in *Signed* Cookie (Stateless)
+    // We combine state, verifier, and private key.
+    let cookie_val = serde_json::to_string(&OauthContext {
+        state: state.clone(),
+        verifier: code_verifier,
+        private_key_pem,
     })
-    .to_string();
+    .unwrap();
 
     let mut cookie = Cookie::new("oauth_context", cookie_val);
     cookie.set_http_only(false); // TEMPORARY: Allow JS to read for debugging
@@ -135,6 +147,67 @@ pub async fn login(jar: SignedCookieJar) -> impl IntoResponse {
     (jar, axum::response::Html(html))
 }
 
+fn create_dpop_proof(
+    method: &str,
+    url: &str,
+    private_key_pem: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // use jwt_simple::prelude::*; // Conflict with p256::SigningKey
+
+    let signing_key = SigningKey::from_pkcs8_pem(private_key_pem)?;
+    let verifying_key = signing_key.verifying_key();
+
+    // Manually construct JWK using to_encoded_point (Standard P-256)
+    let encoded_point = verifying_key.to_encoded_point(false);
+    let x = encoded_point.x().ok_or("Invalid X coordinate")?;
+    let y = encoded_point.y().ok_or("Invalid Y coordinate")?;
+
+    let public_key_json = json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(x),
+        "y": URL_SAFE_NO_PAD.encode(y)
+    });
+
+    // jwt-simple doesn't support raw ES256 with custom headers easily for DPoP "jwk" header field requirements in some versions,
+    // but let's try to construct it manually or use a library feature if available.
+    // Actually, let's use the 'p256' crate capabilities combined with base64/serde for a manual JWT construction to be sure we match the spec exactly.
+    // DPoP requires:
+    // Header: { "typ": "dpop+jwt", "alg": "ES256", "jwk": { ... } }
+    // Payload: { "jti": "...", "htm": "...", "htu": "...", "iat": ... }
+
+    let header = json!({
+        "typ": "dpop+jwt",
+        "alg": "ES256",
+        "jwk": public_key_json
+    });
+
+    let jti: String = rand::thread_rng()
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(20)
+        .map(char::from)
+        .collect();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+
+    let payload = json!({
+        "jti": jti,
+        "htm": method,
+        "htu": url,
+        "iat": now
+    });
+
+    let header_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
+    let payload_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)?);
+    let message = format!("{}.{}", header_b64, payload_b64);
+
+    let signature: p256::ecdsa::Signature = signing_key.try_sign(message.as_bytes())?;
+    let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes());
+
+    Ok(format!("{}.{}", message, signature_b64))
+}
+
 #[derive(Deserialize, Debug)]
 pub struct CallbackQuery {
     code: Option<String>,
@@ -144,10 +217,11 @@ pub struct CallbackQuery {
     error_description: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct OauthContext {
     state: String,
     verifier: String,
+    private_key_pem: String,
 }
 
 pub async fn callback(
@@ -222,9 +296,16 @@ pub async fn callback(
         ("code_verifier", &context.verifier),
     ];
 
+    let dpop_proof = create_dpop_proof("POST", token_endpoint, &context.private_key_pem)
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to create DPoP proof: {}", e);
+            "error".to_string()
+        });
+
     let res = client
         .post(token_endpoint)
         .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("DPoP", dpop_proof)
         .form(&token_params)
         .send()
         .await;
