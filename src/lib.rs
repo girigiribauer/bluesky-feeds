@@ -27,6 +27,7 @@ pub fn app(state: SharedState) -> Router {
         .route("/client-metadata.json", get(handlers::client_metadata))
         .route("/oauth/login", get(handlers::login))
         .route("/oauth/callback", get(handlers::callback))
+        .route("/oauth/logout", get(handlers::logout))
         .route(
             "/xrpc/app.bsky.feed.getFeedSkeleton",
             get(handlers::get_feed_skeleton),

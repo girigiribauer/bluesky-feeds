@@ -19,6 +19,17 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), Error> {
         );
         CREATE INDEX IF NOT EXISTS idx_private_list_post_cache_author ON private_list_post_cache(author_did);
         CREATE INDEX IF NOT EXISTS idx_private_list_post_cache_indexed_at ON private_list_post_cache(indexed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS privatelist_sessions (
+            session_id TEXT PRIMARY KEY,
+            did TEXT NOT NULL,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            dpop_private_key TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_privatelist_sessions_did ON privatelist_sessions(did);
         "#,
     )
     .execute(pool)
@@ -124,4 +135,56 @@ pub async fn get_cached_posts(
         });
     }
     Ok(posts)
+}
+
+pub struct Session {
+    pub session_id: String,
+    pub did: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    pub dpop_private_key: String,
+    pub expires_at: i64,
+}
+
+pub async fn create_session(pool: &SqlitePool, session: &Session) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO privatelist_sessions (session_id, did, access_token, refresh_token, dpop_private_key, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&session.session_id)
+    .bind(&session.did)
+    .bind(&session.access_token)
+    .bind(&session.refresh_token)
+    .bind(&session.dpop_private_key)
+    .bind(session.expires_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_session(pool: &SqlitePool, session_id: &str) -> Result<Option<Session>, Error> {
+    let row = sqlx::query("SELECT * FROM privatelist_sessions WHERE session_id = ?")
+        .bind(session_id)
+        .fetch_optional(pool)
+        .await?;
+
+    if let Some(row) = row {
+        Ok(Some(Session {
+            session_id: row.try_get("session_id")?,
+            did: row.try_get("did")?,
+            access_token: row.try_get("access_token")?,
+            refresh_token: row.try_get("refresh_token")?,
+            dpop_private_key: row.try_get("dpop_private_key")?,
+            expires_at: row.try_get("expires_at")?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+pub async fn delete_session(pool: &SqlitePool, session_id: &str) -> Result<(), Error> {
+    sqlx::query("DELETE FROM privatelist_sessions WHERE session_id = ?")
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

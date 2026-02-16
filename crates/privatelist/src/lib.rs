@@ -8,7 +8,10 @@ use chrono::DateTime;
 use reqwest::Client;
 use sqlx::SqlitePool;
 
-pub use db::{add_user, list_users, migrate, remove_user};
+pub use db::{
+    Session, add_user, create_session, delete_session, get_session, list_users, migrate,
+    remove_user,
+};
 
 pub async fn refresh_list(
     pool: &SqlitePool,

@@ -1,17 +1,23 @@
-use axum::{extract::Query, response::IntoResponse, Json};
+use axum::{
+    extract::{Query, State},
+    response::IntoResponse,
+    Json,
+};
 use axum_extra::extract::cookie::{Cookie, SameSite, SignedCookieJar};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use rand::Rng;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::env;
-use time::Duration;
+use time::{Duration, OffsetDateTime};
 
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::SigningKey;
 use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
+
+use crate::state::SharedState;
 
 fn get_privatelist_url() -> String {
     env::var("PRIVATELIST_URL")
@@ -234,6 +240,7 @@ struct OauthContext {
 
 pub async fn callback(
     jar: SignedCookieJar,
+    State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Query(params): Query<CallbackQuery>,
 ) -> impl IntoResponse {
@@ -337,11 +344,62 @@ pub async fn callback(
                 if response.status().is_success() {
                     let body = response.text().await.unwrap_or_default();
                     tracing::info!("Token Exchange Successful: {}", body);
-                    // TODO: Store tokens in a new persistent session cookie
-                    // Clear the oauth cookie after use
+
+                    // Parse response
+                    let token_res: serde_json::Value =
+                        serde_json::from_str(&body).unwrap_or_default();
+                    let access_token = token_res["access_token"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let refresh_token = token_res["refresh_token"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let expires_in = token_res["expires_in"].as_i64().unwrap_or(3600);
+                    let sub = token_res["sub"].as_str().unwrap_or_default().to_string(); // DID
+
+                    if sub.is_empty() {
+                        return "Login failed: Missing DID in response".into_response();
+                    }
+
+                    // Generate Session ID
+                    let session_bytes: Vec<u8> = rand::thread_rng()
+                        .sample_iter(&rand::distributions::Alphanumeric)
+                        .take(32)
+                        .collect();
+                    let session_id = URL_SAFE_NO_PAD.encode(session_bytes);
+
+                    // Create Session
+                    let session = privatelist::Session {
+                        session_id: session_id.clone(),
+                        did: sub,
+                        access_token,
+                        refresh_token,
+                        dpop_private_key: context.private_key_pem.clone(),
+                        expires_at: OffsetDateTime::now_utc().unix_timestamp() + expires_in,
+                    };
+
+                    if let Err(e) =
+                        privatelist::create_session(&state.privatelist_db, &session).await
+                    {
+                        tracing::error!("Failed to create session: {}", e);
+                        return "Login failed: Database error".into_response();
+                    };
+
+                    // Set Cookie
+                    let mut cookie = Cookie::new("privatelist_session", session_id);
+                    cookie.set_http_only(true);
+                    cookie.set_secure(true);
+                    cookie.set_same_site(SameSite::Lax);
+                    cookie.set_path("/");
+                    cookie.set_max_age(Duration::days(30));
+
+                    let jar = jar.add(cookie);
+                    // Clear OAuth context
                     let jar = jar.remove(Cookie::from("oauth_context"));
-                    return (jar, format!("Login Successful! \n\nResponse: {}", body))
-                        .into_response();
+
+                    return (jar, axum::response::Redirect::to("/")).into_response();
                 } else if response.status() == 400 || response.status() == 401 {
                     // Check for DPoP Nonce error
                     if let Some(new_nonce) = response.headers().get("DPoP-Nonce") {
@@ -385,4 +443,19 @@ pub async fn callback(
             }
         }
     }
+}
+
+pub async fn logout(
+    jar: SignedCookieJar,
+    State(state): State<crate::state::SharedState>,
+) -> impl IntoResponse {
+    if let Some(cookie) = jar.get("privatelist_session") {
+        let session_id = cookie.value();
+        if let Err(e) = privatelist::delete_session(&state.privatelist_db, session_id).await {
+            tracing::error!("Failed to delete session: {}", e);
+        }
+    }
+
+    let jar = jar.remove(Cookie::from("privatelist_session"));
+    (jar, axum::response::Redirect::to("/"))
 }
