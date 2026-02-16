@@ -1,26 +1,68 @@
 use crate::state::{FeedQuery, SharedState};
 use axum::{extract::State, http::StatusCode, response::Json};
+use axum_extra::extract::cookie::SignedCookieJar;
 
 #[derive(serde::Deserialize)]
 pub struct PrivateListTarget {
     pub target: String,
 }
 
+// Helper: Authenticate via Cookie (+ Refresh) OR Header
+async fn authenticate_user(
+    jar: &SignedCookieJar,
+    headers: &axum::http::HeaderMap,
+    state: &SharedState,
+) -> Result<String, (StatusCode, String)> {
+    // 1. Try Cookie (Session)
+    if let Some(cookie) = jar.get("privatelist_session") {
+        let session_id = cookie.value();
+        // Lookup Session
+        if let Some(mut session) = privatelist::get_session(&state.privatelist_db, session_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("DB Error getting session: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Database error".to_string(),
+                )
+            })?
+        {
+            // Refresh if needed
+            // If refresh fails (e.g. token revoked), we should probably fail auth.
+            if let Err(e) =
+                crate::handlers::oauth::refresh_token_if_needed(&state.privatelist_db, &mut session)
+                    .await
+            {
+                tracing::warn!("Session refresh failed: {}", e);
+                // Fallthrough to check header? Or fail?
+                // If cookie implies logic, failing is safer. User can re-login.
+                return Err((StatusCode::UNAUTHORIZED, "Session expired".to_string()));
+            }
+
+            return Ok(session.did);
+        }
+    }
+
+    // 2. Try Header (Bearer JWT)
+    if let Some(auth_header) = headers.get("authorization").and_then(|h| h.to_str().ok()) {
+        if let Ok(did) = bsky_core::extract_did_from_jwt(Some(auth_header)) {
+            return Ok(did);
+        }
+    }
+
+    Err((
+        StatusCode::UNAUTHORIZED,
+        "Missing or invalid authorization".to_string(),
+    ))
+}
+
 pub async fn privatelist_add(
+    jar: SignedCookieJar,
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Json(payload): Json<PrivateListTarget>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let auth_header = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing authorization header".to_string(),
-        ))?;
-
-    let user_did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+    let user_did = authenticate_user(&jar, &headers, &state).await?;
 
     privatelist::add_user(&state.privatelist_db, &user_did, &payload.target)
         .await
@@ -36,20 +78,12 @@ pub async fn privatelist_add(
 }
 
 pub async fn privatelist_remove(
+    jar: SignedCookieJar,
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Json(payload): Json<PrivateListTarget>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let auth_header = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing authorization header".to_string(),
-        ))?;
-
-    let user_did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+    let user_did = authenticate_user(&jar, &headers, &state).await?;
 
     privatelist::remove_user(&state.privatelist_db, &user_did, &payload.target)
         .await
@@ -65,19 +99,11 @@ pub async fn privatelist_remove(
 }
 
 pub async fn privatelist_list(
+    jar: SignedCookieJar,
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<String>>, (StatusCode, String)> {
-    let auth_header = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing authorization header".to_string(),
-        ))?;
-
-    let user_did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+    let user_did = authenticate_user(&jar, &headers, &state).await?;
 
     let users = privatelist::list_users(&state.privatelist_db, &user_did)
         .await
@@ -93,19 +119,11 @@ pub async fn privatelist_list(
 }
 
 pub async fn privatelist_refresh(
+    jar: SignedCookieJar,
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let auth_header = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "Missing authorization header".to_string(),
-        ))?;
-
-    let user_did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+    let user_did = authenticate_user(&jar, &headers, &state).await?;
 
     // Read client and current token
     let (client, current_token) = {
@@ -283,9 +301,10 @@ mod tests {
         let state = create_test_state().await;
         let user_did = "did:plc:user1";
         let headers = create_auth_headers(user_did);
+        let jar = SignedCookieJar::new(state.key.clone()); // Mock Jar
 
         // 1. Initial list should be empty
-        let list = privatelist_list(State(state.clone()), headers.clone())
+        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
             .await
             .unwrap();
         assert!(list.0.is_empty());
@@ -295,13 +314,13 @@ mod tests {
         let payload = Json(PrivateListTarget {
             target: target_did.to_string(),
         });
-        let status = privatelist_add(State(state.clone()), headers.clone(), payload)
+        let status = privatelist_add(jar.clone(), State(state.clone()), headers.clone(), payload)
             .await
             .unwrap();
         assert_eq!(status, StatusCode::OK);
 
         // 3. List should contain target
-        let list = privatelist_list(State(state.clone()), headers.clone())
+        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
             .await
             .unwrap();
         assert_eq!(list.0.len(), 1);
@@ -311,13 +330,14 @@ mod tests {
         let payload = Json(PrivateListTarget {
             target: target_did.to_string(),
         });
-        let status = privatelist_remove(State(state.clone()), headers.clone(), payload)
-            .await
-            .unwrap();
+        let status =
+            privatelist_remove(jar.clone(), State(state.clone()), headers.clone(), payload)
+                .await
+                .unwrap();
         assert_eq!(status, StatusCode::OK);
 
         // 5. List should be empty again
-        let list = privatelist_list(State(state.clone()), headers.clone())
+        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
             .await
             .unwrap();
         assert!(list.0.is_empty());

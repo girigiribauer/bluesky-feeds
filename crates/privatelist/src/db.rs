@@ -188,3 +188,16 @@ pub async fn delete_session(pool: &SqlitePool, session_id: &str) -> Result<(), E
         .await?;
     Ok(())
 }
+
+pub async fn update_session(pool: &SqlitePool, session: &Session) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE privatelist_sessions SET access_token = ?, refresh_token = ?, expires_at = ? WHERE session_id = ?",
+    )
+    .bind(&session.access_token)
+    .bind(&session.refresh_token)
+    .bind(session.expires_at)
+    .bind(&session.session_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}

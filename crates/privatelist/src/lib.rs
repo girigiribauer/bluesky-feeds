@@ -10,7 +10,7 @@ use sqlx::SqlitePool;
 
 pub use db::{
     Session, add_user, create_session, delete_session, get_session, list_users, migrate,
-    remove_user,
+    remove_user, update_session,
 };
 
 pub async fn refresh_list(

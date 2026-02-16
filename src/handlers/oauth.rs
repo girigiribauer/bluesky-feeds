@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::state::SharedState;
 
-fn get_privatelist_url() -> String {
+pub fn get_privatelist_url() -> String {
     env::var("PRIVATELIST_URL")
         .unwrap_or_else(|_| "https://privatelist.bsky.girigiribauer.com".to_string())
 }
@@ -458,4 +458,104 @@ pub async fn logout(
 
     let jar = jar.remove(Cookie::from("privatelist_session"));
     (jar, axum::response::Redirect::to("/"))
+}
+
+pub async fn refresh_token_if_needed(
+    pool: &sqlx::SqlitePool,
+    session: &mut privatelist::Session,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    // Refresh if expired or expiring in less than 5 minutes
+    if session.expires_at > now + 300 {
+        return Ok(session.access_token.clone());
+    }
+
+    tracing::info!("Access Token expired or expiring soon, refreshing...");
+
+    let token_endpoint = "https://bsky.social/oauth/token"; // TODO: Resolve from DID
+    let base_url = get_privatelist_url();
+    let client_id = format!("{}/client-metadata.json", base_url);
+
+    let client = reqwest::Client::new();
+    let token_params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", &session.refresh_token),
+        ("client_id", &client_id),
+    ];
+
+    // Retry loop for DPoP Nonce
+    let mut nonce: Option<String> = None;
+    let mut retry_count = 0;
+
+    loop {
+        if retry_count > 1 {
+            return Err("Token refresh failed: Too many retries".into());
+        }
+
+        let dpop_proof = create_dpop_proof(
+            "POST",
+            token_endpoint,
+            &session.dpop_private_key,
+            nonce.as_deref(),
+        )?;
+
+        let res = client
+            .post(token_endpoint)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("DPoP", dpop_proof)
+            .form(&token_params)
+            .send()
+            .await?;
+
+        if res.status().is_success() {
+            let body = res.text().await?;
+            // tracing::info!("Refresh Token Response: {}", body);
+            let token_res: serde_json::Value = serde_json::from_str(&body)?;
+
+            let new_access_token = token_res["access_token"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let new_refresh_token = token_res["refresh_token"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let expires_in = token_res["expires_in"].as_i64().unwrap_or(3600);
+
+            if new_access_token.is_empty() {
+                return Err("Refresh failed: Missing access token".into());
+            }
+
+            // Update Session
+            session.access_token = new_access_token.clone();
+            if !new_refresh_token.is_empty() {
+                session.refresh_token = new_refresh_token;
+            }
+            session.expires_at = OffsetDateTime::now_utc().unix_timestamp() + expires_in;
+
+            if let Err(e) = privatelist::update_session(pool, session).await {
+                tracing::error!("Failed to update session: {}", e);
+                return Err("Database update failed".into());
+            }
+
+            tracing::info!("Session Refreshed Successfully");
+            return Ok(session.access_token.clone());
+        } else if res.status() == 400 || res.status() == 401 {
+            if let Some(new_nonce) = res.headers().get("DPoP-Nonce") {
+                if let Ok(n) = new_nonce.to_str() {
+                    tracing::info!("Received DPoP-Nonce during refresh: {}, retrying...", n);
+                    nonce = Some(n.to_string());
+                    retry_count += 1;
+                    continue;
+                }
+            }
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(format!("Refresh failed: {} - {}", status, body).into());
+        } else {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            return Err(format!("Refresh failed: {} - {}", status, body).into());
+        }
+    }
 }
