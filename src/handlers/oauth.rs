@@ -151,6 +151,7 @@ fn create_dpop_proof(
     method: &str,
     url: &str,
     private_key_pem: &str,
+    nonce: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // use jwt_simple::prelude::*; // Conflict with p256::SigningKey
 
@@ -174,7 +175,7 @@ fn create_dpop_proof(
     // Actually, let's use the 'p256' crate capabilities combined with base64/serde for a manual JWT construction to be sure we match the spec exactly.
     // DPoP requires:
     // Header: { "typ": "dpop+jwt", "alg": "ES256", "jwk": { ... } }
-    // Payload: { "jti": "...", "htm": "...", "htu": "...", "iat": ... }
+    // Payload: { "jti": "...", "htm": "...", "htu": "...", "iat": ..., "nonce": ... }
 
     let header = json!({
         "typ": "dpop+jwt",
@@ -191,12 +192,19 @@ fn create_dpop_proof(
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
 
-    let payload = json!({
+    let mut payload = json!({
         "jti": jti,
         "htm": method,
         "htu": url,
         "iat": now
     });
+
+    if let Some(n) = nonce {
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("nonce".to_string(), json!(n));
+    }
 
     let header_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header)?);
     let payload_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&payload)?);
@@ -296,45 +304,85 @@ pub async fn callback(
         ("code_verifier", &context.verifier),
     ];
 
-    let dpop_proof = create_dpop_proof("POST", token_endpoint, &context.private_key_pem)
+    // Retry loop for DPoP Nonce
+    let mut nonce: Option<String> = None;
+    let mut retry_count = 0;
+
+    loop {
+        if retry_count > 1 {
+            return "Token exchange failed: Too many retries".into_response();
+        }
+
+        let dpop_proof = create_dpop_proof(
+            "POST",
+            token_endpoint,
+            &context.private_key_pem,
+            nonce.as_deref(),
+        )
         .unwrap_or_else(|e| {
             tracing::error!("Failed to create DPoP proof: {}", e);
             "error".to_string()
         });
 
-    let res = client
-        .post(token_endpoint)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("DPoP", dpop_proof)
-        .form(&token_params)
-        .send()
-        .await;
+        let res = client
+            .post(token_endpoint)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("DPoP", dpop_proof)
+            .form(&token_params)
+            .send()
+            .await;
 
-    // Clear the oauth cookie after use
-    let jar = jar.remove(Cookie::from("oauth_context"));
-
-    match res {
-        Ok(response) => {
-            if response.status().is_success() {
-                let body = response.text().await.unwrap_or_default();
-                tracing::info!("Token Exchange Successful: {}", body);
-
-                // TODO: Store tokens in a new persistent session cookie
-                (jar, format!("Login Successful! \n\nResponse: {}", body)).into_response()
-            } else {
-                let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                tracing::error!("Token Exchange Failed: {} - {}", status, body);
-                (
-                    jar,
-                    format!("Token Exchange Failed: {} \n\n {}", status, body),
-                )
-                    .into_response()
+        match res {
+            Ok(response) => {
+                if response.status().is_success() {
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::info!("Token Exchange Successful: {}", body);
+                    // TODO: Store tokens in a new persistent session cookie
+                    // Clear the oauth cookie after use
+                    let jar = jar.remove(Cookie::from("oauth_context"));
+                    return (jar, format!("Login Successful! \n\nResponse: {}", body))
+                        .into_response();
+                } else if response.status() == 400 || response.status() == 401 {
+                    // Check for DPoP Nonce error
+                    if let Some(new_nonce) = response.headers().get("DPoP-Nonce") {
+                        if let Ok(n) = new_nonce.to_str() {
+                            tracing::info!("Received DPoP-Nonce: {}, retrying...", n);
+                            nonce = Some(n.to_string());
+                            retry_count += 1;
+                            continue;
+                        }
+                    }
+                    // Fallthrough if no nonce or parsing failed
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::error!(
+                        "Token Exchange Failed (No Nonce Retry): {} - {}",
+                        status,
+                        body
+                    );
+                    let jar = jar.remove(Cookie::from("oauth_context"));
+                    return (
+                        jar,
+                        format!("Token Exchange Failed: {} \n\n {}", status, body),
+                    )
+                        .into_response();
+                } else {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    tracing::error!("Token Exchange Failed: {} - {}", status, body);
+                    let jar = jar.remove(Cookie::from("oauth_context"));
+                    return (
+                        jar,
+                        format!("Token Exchange Failed: {} \n\n {}", status, body),
+                    )
+                        .into_response();
+                }
             }
-        }
-        Err(e) => {
-            tracing::error!("Request Failed: {}", e);
-            (jar, format!("Request Failed: {}", e)).into_response()
+            Err(e) => {
+                tracing::error!("Request Failed: {}", e);
+                let jar = jar.remove(Cookie::from("oauth_context"));
+                return (jar, format!("Request Failed: {}", e)).into_response();
+            }
         }
     }
 }
