@@ -95,18 +95,12 @@ jobs:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           DOMAIN: ${{ secrets.DOMAIN }}
           SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
-          UMAMI_HOST: ${{ secrets.UMAMI_HOST }}
-          UMAMI_WEBSITE_ID: ${{ secrets.UMAMI_WEBSITE_ID }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
 
           ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && \
-          sed -i '/^UMAMI_HOST=/d' .env && \
-          sed -i '/^UMAMI_WEBSITE_ID=/d' .env && \
-          echo 'UMAMI_HOST=$UMAMI_HOST' >> .env && \
-          echo 'UMAMI_WEBSITE_ID=$UMAMI_WEBSITE_ID' >> .env && \
           docker compose pull app && docker compose up -d"
 
       - name: 秘密鍵の削除

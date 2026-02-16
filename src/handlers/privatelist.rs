@@ -122,7 +122,7 @@ pub async fn privatelist_refresh(
     match privatelist::refresh_list(
         &state.privatelist_db,
         &client,
-        &state.privatelist_url,
+        &state.bsky_api_url,
         &user_did,
         &token,
     )
@@ -161,7 +161,7 @@ pub async fn privatelist_refresh(
                             match privatelist::refresh_list(
                                 &state.privatelist_db,
                                 &client,
-                                &state.privatelist_url,
+                                &state.bsky_api_url,
                                 &user_did,
                                 &new_token,
                             )
@@ -262,7 +262,8 @@ mod tests {
             fakebluesky_db: pool.clone(),
             privatelist_db: pool,
             umami: UmamiClient::new("http://localhost".to_string(), "site_id".to_string(), None),
-            privatelist_url: "https://api.bsky.app".to_string(),
+            bsky_api_url: "https://api.bsky.app".to_string(),
+            key: axum_extra::extract::cookie::Key::generate(),
         }
     }
 

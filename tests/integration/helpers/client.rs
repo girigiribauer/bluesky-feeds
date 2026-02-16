@@ -21,8 +21,8 @@ impl TestClient {
         Self::new_with_bsky_url(None).await
     }
 
-    pub async fn new_with_bsky_url(privatelist_url: Option<String>) -> Self {
-        let state = create_test_state(privatelist_url).await;
+    pub async fn new_with_bsky_url(bsky_api_url: Option<String>) -> Self {
+        let state = create_test_state(bsky_api_url).await;
         let router = app(state);
         Self { router }
     }
@@ -166,7 +166,7 @@ impl TestClient {
     }
 }
 
-async fn create_test_state(privatelist_url: Option<String>) -> SharedState {
+async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
     let db = sqlx::sqlite::SqlitePoolOptions::new()
         .connect("sqlite::memory:")
         .await
@@ -224,6 +224,7 @@ async fn create_test_state(privatelist_url: Option<String>) -> SharedState {
             "dummy_website_id".to_string(),
             Some("localhost".to_string()),
         ),
-        privatelist_url: privatelist_url.unwrap_or_else(|| "https://api.bsky.app".to_string()),
+        bsky_api_url: bsky_api_url.unwrap_or_else(|| "https://api.bsky.app".to_string()),
+        key: axum_extra::extract::cookie::Key::generate(),
     }
 }

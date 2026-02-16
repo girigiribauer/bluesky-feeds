@@ -92,8 +92,13 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
             ),
         ),
-        privatelist_url: std::env::var("PRIVATELIST_URL")
+        bsky_api_url: std::env::var("BSKY_API_URL")
             .unwrap_or_else(|_| "https://api.bsky.app".to_string()),
+        key: axum_extra::extract::cookie::Key::from(
+             &std::env::var("COOKIE_SECRET")
+                .unwrap_or_else(|_| "very-secret-key-that-is-at-least-64-bytes-long-for-security-reasons-please-change-me".to_string())
+                .into_bytes()
+        ),
     };
 
     // Start Jetstream consumer in background

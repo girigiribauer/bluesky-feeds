@@ -3,8 +3,7 @@ test: fmt lint test-all
 
 # Run local dev server (loads .env)
 dev:
-	mkdir -p data
-	set -a && . ./.env && set +a && RUST_LOG=info cargo run --bin bluesky-feeds
+	./scripts/dev.sh
 
 # Run frontend dev server (UI)
 dev-webui:

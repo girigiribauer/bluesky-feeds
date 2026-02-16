@@ -24,6 +24,9 @@ pub fn app(state: SharedState) -> Router {
             "/privatelist/refresh",
             axum::routing::post(handlers::privatelist_refresh),
         )
+        .route("/client-metadata.json", get(handlers::client_metadata))
+        .route("/oauth/login", get(handlers::login))
+        .route("/oauth/callback", get(handlers::callback))
         .route(
             "/xrpc/app.bsky.feed.getFeedSkeleton",
             get(handlers::get_feed_skeleton),

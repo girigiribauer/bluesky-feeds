@@ -23,7 +23,14 @@ pub struct AppState {
     pub fakebluesky_db: SqlitePool,
     pub privatelist_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,
-    pub privatelist_url: String,
+    pub bsky_api_url: String,
+    pub key: axum_extra::extract::cookie::Key,
+}
+
+impl axum::extract::FromRef<AppState> for axum_extra::extract::cookie::Key {
+    fn from_ref(state: &AppState) -> Self {
+        state.key.clone()
+    }
 }
 
 #[derive(Clone, Debug)]

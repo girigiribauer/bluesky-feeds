@@ -3,3 +3,4 @@ target/
 .gitignore
 *.md
 README.md
+webui/
