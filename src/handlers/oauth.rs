@@ -31,7 +31,7 @@ pub async fn client_metadata() -> impl IntoResponse {
         "response_types": ["code"],
         "application_type": "web",
         "token_endpoint_auth_method": "none",
-        "dpop_bound_access_tokens": true
+        "dpop_bound_access_tokens": false
     });
 
     Json(metadata)
