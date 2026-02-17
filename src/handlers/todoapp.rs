@@ -1,16 +1,16 @@
+use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
-use axum::{http::StatusCode, response::Json};
+use axum::response::Json;
 
 pub async fn handle_todoapp(
     state: SharedState,
     headers: axum::http::HeaderMap,
     _params: FeedQuery,
-) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
     let auth_header = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
+        .ok_or(AppError::Auth(
             "Missing or invalid authorization header".to_string(),
         ))?;
 
@@ -20,10 +20,9 @@ pub async fn handle_todoapp(
         (state.http_client.clone(), auth.token.clone())
     };
 
-    let token = current_token.ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Service not authenticated".to_string(),
-    ))?;
+    let token = current_token.ok_or(AppError::Internal(anyhow::anyhow!(
+        "Service not authenticated"
+    )))?;
 
     // First attempt
     match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
@@ -58,32 +57,30 @@ pub async fn handle_todoapp(
                                 Ok(res) => Ok(Json(res)),
                                 Err(e2) => {
                                     tracing::error!("Retry failed: {:#}", e2);
-                                    Err((
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        format!("Retry failed: {:#}", e2),
-                                    ))
+                                    Err(AppError::Internal(anyhow::anyhow!(
+                                        "Retry failed: {:#}",
+                                        e2
+                                    )))
                                 }
                             }
                         }
                         Err(reauth_err) => {
                             tracing::error!("Re-authentication failed: {}", reauth_err);
-                            Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "Re-authentication failed".to_string(),
-                            ))
+                            Err(AppError::Internal(anyhow::anyhow!(
+                                "Re-authentication failed"
+                            )))
                         }
                     }
                 } else {
                     tracing::error!("Cannot refresh token: credentials missing");
-                    Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                    Err(AppError::BadRequest(
                         "Credentials missing for refresh".to_string(),
                     ))
                 }
             } else {
                 // Other error
                 tracing::error!("Todoapp error: {:#}", e);
-                Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
+                Err(AppError::Internal(e))
             }
         }
     }

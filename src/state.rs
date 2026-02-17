@@ -13,7 +13,16 @@ pub struct FeedQuery {
 pub type SharedState = AppState;
 
 #[derive(Clone)]
+pub struct AppConfig {
+    pub privatelist_url: String,
+    pub bsky_api_url: String,
+    pub client_id: String,
+    pub redirect_uri: String,
+}
+
+#[derive(Clone)]
 pub struct AppState {
+    pub config: AppConfig,
     pub helloworld: helloworld::State,
     pub http_client: reqwest::Client,
     pub service_auth: Arc<RwLock<ServiceAuth>>,
@@ -23,7 +32,6 @@ pub struct AppState {
     pub fakebluesky_db: SqlitePool,
     pub privatelist_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,
-    pub bsky_api_url: String,
     pub key: axum_extra::extract::cookie::Key,
 }
 

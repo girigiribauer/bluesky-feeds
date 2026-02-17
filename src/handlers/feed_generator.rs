@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use crate::handlers::{
     handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_privatelist, handle_todoapp,
     DidResponse, DidService,
@@ -5,7 +6,6 @@ use crate::handlers::{
 use crate::state::{FeedQuery, SharedState};
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     response::Json,
 };
 use bsky_core::FeedService;
@@ -14,7 +14,7 @@ pub async fn get_feed_skeleton(
     State(state): State<SharedState>,
     headers: axum::http::HeaderMap,
     Query(params): Query<FeedQuery>,
-) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
     tracing::info!(
         "Received feed request: {} (cursor={:?}, limit={:?})",
         params.feed,
@@ -48,7 +48,7 @@ pub async fn get_feed_skeleton(
         .feed
         .split('/')
         .next_back()
-        .ok_or((StatusCode::BAD_REQUEST, "Invalid feed URI".to_string()))?;
+        .ok_or(AppError::BadRequest("Invalid feed URI".to_string()))?;
 
     // Construct URL with query parameters for easier filtering in Umami
     let feed_path = format!("/feeds/{}?did={}", feed_name, requester_did);
@@ -67,8 +67,8 @@ pub async fn get_feed_skeleton(
         Some(event_data),
     );
 
-    let service = FeedService::from_str(feed_name)
-        .ok_or((StatusCode::NOT_FOUND, "Feed not found".to_string()))?;
+    let service =
+        FeedService::from_str(feed_name).ok_or(AppError::NotFound("Feed not found".to_string()))?;
 
     match service {
         FeedService::Helloworld => handle_helloworld(state, headers, params).await,
@@ -81,15 +81,12 @@ pub async fn get_feed_skeleton(
 
 pub async fn describe_feed_generator(
     State(state): State<SharedState>,
-) -> Result<Json<bsky_core::DescribeFeedGeneratorResponse>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::DescribeFeedGeneratorResponse>, AppError> {
     let (did, _service_did) = {
         let auth = state.service_auth.read().await;
-        // Authenticated Service DID (from .env/auth) or default from context if we hardcoded it?
-        // Ideally we use the authenticated DID.
-        let did = auth.did.clone().ok_or((
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Service not authenticated yet".to_string(),
-        ))?;
+        let did = auth.did.clone().ok_or(AppError::Internal(anyhow::anyhow!(
+            "Service not authenticated yet"
+        )))?;
         (did.clone(), did) // logic::service_did
     };
 
@@ -119,7 +116,7 @@ pub async fn describe_feed_generator(
 
 pub async fn get_did_json(
     State(_state): State<SharedState>,
-) -> Result<Json<DidResponse>, (StatusCode, String)> {
+) -> Result<Json<DidResponse>, AppError> {
     let hostname = "feeds.bsky.girigiribauer.com";
 
     let did = format!("did:web:{}", hostname);

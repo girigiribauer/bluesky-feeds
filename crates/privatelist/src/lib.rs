@@ -1,5 +1,6 @@
 pub mod api;
 pub mod db;
+pub mod oauth;
 pub mod structs;
 
 use anyhow::{Context, Result};

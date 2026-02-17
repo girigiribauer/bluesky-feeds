@@ -37,6 +37,7 @@ impl TestClient {
                 "/xrpc/app.bsky.feed.getFeedSkeleton?feed={}",
                 feed_uri
             ))
+            .header("Host", "feeds.localhost")
             .method("GET");
 
         if let Some(token) = auth_header {
@@ -75,6 +76,7 @@ impl TestClient {
         let request = Request::builder()
             .uri("/health")
             .method("GET")
+            .header("Host", "feeds.localhost")
             .body(Body::empty())
             .unwrap();
 
@@ -96,6 +98,7 @@ impl TestClient {
         let request = Request::builder()
             .uri("/.well-known/did.json")
             .method("GET")
+            .header("Host", "feeds.localhost")
             .body(Body::empty())
             .unwrap();
 
@@ -118,6 +121,7 @@ impl TestClient {
         let request = Request::builder()
             .uri("/privatelist/add")
             .method("POST")
+            .header("Host", "privatelist.localhost")
             .header("Content-Type", "application/json")
             .body(Body::from(serde_json::to_vec(&payload).unwrap()))
             .unwrap();
@@ -144,6 +148,7 @@ impl TestClient {
         let request = Request::builder()
             .uri("/privatelist/refresh")
             .method("POST")
+            .header("Host", "privatelist.localhost")
             .body(Body::empty())
             .unwrap();
 
@@ -208,6 +213,12 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
     .unwrap();
 
     AppState {
+        config: bluesky_feeds::state::AppConfig {
+            privatelist_url: "http://localhost:3000".to_string(),
+            bsky_api_url: bsky_api_url.unwrap_or_else(|| "https://api.bsky.app".to_string()),
+            client_id: "http://localhost:3000/client-metadata.json".to_string(),
+            redirect_uri: "http://localhost:3000/oauth/callback".to_string(),
+        },
         helloworld: helloworld::State::default(),
         http_client: reqwest::Client::new(),
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
@@ -224,7 +235,6 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
             "dummy_website_id".to_string(),
             Some("localhost".to_string()),
         ),
-        bsky_api_url: bsky_api_url.unwrap_or_else(|| "https://api.bsky.app".to_string()),
         key: axum_extra::extract::cookie::Key::generate(),
     }
 }

@@ -50,12 +50,13 @@ async fn main() -> anyhow::Result<()> {
     let privatelist_db = bluesky_feeds::connect_database(&privatelist_db_url).await?;
     privatelist::migrate(&privatelist_db).await?;
 
-    // Perform initial authentication
+    // Initialize HTTP Client
     let http_client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
         .build()
         .expect("Failed to build HTTP client");
 
+    // Perform initial authentication
     let (initial_token, initial_did) = if !handle.is_empty() && !password.is_empty() {
         match todoapp::authenticate(&http_client, &handle, &password).await {
             Ok((token, did)) => {
@@ -72,7 +73,20 @@ async fn main() -> anyhow::Result<()> {
         (None, None)
     };
 
+    let privatelist_url =
+        std::env::var("PRIVATELIST_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let bsky_api_url =
+        std::env::var("BSKY_API_URL").unwrap_or_else(|_| "https://api.bsky.app".to_string());
+
+    let config = bluesky_feeds::state::AppConfig {
+        privatelist_url: privatelist_url.clone(),
+        bsky_api_url: bsky_api_url.clone(),
+        client_id: format!("{}/client-metadata.json", privatelist_url),
+        redirect_uri: format!("{}/oauth/callback", privatelist_url),
+    };
+
     let app_state = AppState {
+        config,
         helloworld: helloworld::State::default(),
         http_client,
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
@@ -92,8 +106,6 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
             ),
         ),
-        bsky_api_url: std::env::var("BSKY_API_URL")
-            .unwrap_or_else(|_| "https://api.bsky.app".to_string()),
         key: axum_extra::extract::cookie::Key::from(
              &std::env::var("COOKIE_SECRET")
                 .unwrap_or_else(|_| "very-secret-key-that-is-at-least-64-bytes-long-for-security-reasons-please-change-me".to_string())

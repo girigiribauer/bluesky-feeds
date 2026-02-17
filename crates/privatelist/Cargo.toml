@@ -13,3 +13,9 @@ sqlx = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
+rand = "0.8"
+sha2 = "0.10"
+base64 = "0.21"
+urlencoding = "2.1.3"
+time = "0.3.36"
+p256 = { version = "0.13.2", features = ["ecdsa", "jwk", "pkcs8"] }

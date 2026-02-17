@@ -1,44 +1,78 @@
+use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
-use axum::{extract::State, http::StatusCode, response::Json};
+use axum::{
+    async_trait,
+    extract::{FromRequestParts, State},
+    http::{request::Parts, StatusCode},
+    response::{IntoResponse, Json},
+};
 use axum_extra::extract::cookie::SignedCookieJar;
+use serde::{Deserialize, Serialize};
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 pub struct PrivateListTarget {
     pub target: String,
 }
 
-// Helper: Authenticate via Cookie (+ Refresh) OR Header
+#[derive(Serialize)]
+pub struct WhoAmIResponse {
+    pub did: String,
+}
+
+pub struct AuthenticatedUser(pub String);
+
+#[async_trait]
+impl FromRequestParts<SharedState> for AuthenticatedUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &SharedState,
+    ) -> Result<Self, Self::Rejection> {
+        // 1. Check Cookie
+        let jar = SignedCookieJar::from_headers(&parts.headers, state.key.clone());
+        if let Some(cookie) = jar.get("privatelist_session") {
+            let session_id: &str = cookie.value();
+            if let Some(mut session) =
+                privatelist::get_session(&state.privatelist_db, session_id).await?
+            {
+                // Auto-refresh if needed
+                refresh_token_if_needed(&state.privatelist_db, &mut session, &state.config).await?;
+                return Ok(AuthenticatedUser(session.did));
+            }
+        }
+
+        // 2. Check Header
+        if let Some(auth_header) = parts
+            .headers
+            .get("authorization")
+            .and_then(|h| h.to_str().ok())
+        {
+            if let Ok(did) = bsky_core::extract_did_from_jwt(Some(auth_header)) {
+                return Ok(AuthenticatedUser(did));
+            }
+        }
+
+        Err(AppError::Auth(
+            "Missing or invalid authorization".to_string(),
+        ))
+    }
+}
+
+// Helper: Authenticate via Cookie (+ Refresh) OR Header (Old version - keeping for compatibility if needed, but extractor is preferred)
+#[allow(dead_code)]
 async fn authenticate_user(
     jar: &SignedCookieJar,
     headers: &axum::http::HeaderMap,
     state: &SharedState,
-) -> Result<String, (StatusCode, String)> {
+) -> Result<String, AppError> {
     // 1. Try Cookie (Session)
     if let Some(cookie) = jar.get("privatelist_session") {
         let session_id = cookie.value();
-        // Lookup Session
-        if let Some(mut session) = privatelist::get_session(&state.privatelist_db, session_id)
-            .await
-            .map_err(|e| {
-                tracing::error!("DB Error getting session: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error".to_string(),
-                )
-            })?
+        if let Some(mut session) =
+            privatelist::get_session(&state.privatelist_db, session_id).await?
         {
-            // Refresh if needed
-            // If refresh fails (e.g. token revoked), we should probably fail auth.
-            if let Err(e) =
-                crate::handlers::oauth::refresh_token_if_needed(&state.privatelist_db, &mut session)
-                    .await
-            {
-                tracing::warn!("Session refresh failed: {}", e);
-                // Fallthrough to check header? Or fail?
-                // If cookie implies logic, failing is safer. User can re-login.
-                return Err((StatusCode::UNAUTHORIZED, "Session expired".to_string()));
-            }
-
+            refresh_token_if_needed(&state.privatelist_db, &mut session, &state.config).await?;
             return Ok(session.did);
         }
     }
@@ -50,89 +84,55 @@ async fn authenticate_user(
         }
     }
 
-    Err((
-        StatusCode::UNAUTHORIZED,
+    Err(AppError::Auth(
         "Missing or invalid authorization".to_string(),
     ))
 }
 
-pub async fn privatelist_add(
-    jar: SignedCookieJar,
-    State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
-    Json(payload): Json<PrivateListTarget>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let user_did = authenticate_user(&jar, &headers, &state).await?;
+pub async fn privatelist_me(user: AuthenticatedUser) -> impl IntoResponse {
+    Json(WhoAmIResponse { did: user.0 })
+}
 
-    privatelist::add_user(&state.privatelist_db, &user_did, &payload.target)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to add user to private list: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database error".to_string(),
-            )
-        })?;
+pub async fn privatelist_add(
+    user: AuthenticatedUser,
+    State(state): State<SharedState>,
+    Json(payload): Json<PrivateListTarget>,
+) -> Result<StatusCode, AppError> {
+    privatelist::add_user(&state.privatelist_db, &user.0, &payload.target).await?;
 
     Ok(StatusCode::OK)
 }
 
 pub async fn privatelist_remove(
-    jar: SignedCookieJar,
+    user: AuthenticatedUser,
     State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
     Json(payload): Json<PrivateListTarget>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let user_did = authenticate_user(&jar, &headers, &state).await?;
-
-    privatelist::remove_user(&state.privatelist_db, &user_did, &payload.target)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to remove user from private list: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database error".to_string(),
-            )
-        })?;
+) -> Result<StatusCode, AppError> {
+    privatelist::remove_user(&state.privatelist_db, &user.0, &payload.target).await?;
 
     Ok(StatusCode::OK)
 }
 
 pub async fn privatelist_list(
-    jar: SignedCookieJar,
+    user: AuthenticatedUser,
     State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
-) -> Result<Json<Vec<String>>, (StatusCode, String)> {
-    let user_did = authenticate_user(&jar, &headers, &state).await?;
-
-    let users = privatelist::list_users(&state.privatelist_db, &user_did)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to list users in private list: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Database error".to_string(),
-            )
-        })?;
+) -> Result<Json<Vec<String>>, AppError> {
+    let users = privatelist::list_users(&state.privatelist_db, &user.0).await?;
 
     Ok(Json(users))
 }
 
 pub async fn privatelist_refresh(
-    jar: SignedCookieJar,
+    user: AuthenticatedUser,
     State(state): State<SharedState>,
-    headers: axum::http::HeaderMap,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let user_did = authenticate_user(&jar, &headers, &state).await?;
-
+) -> Result<StatusCode, AppError> {
     // Read client and current token
     let (client, current_token) = {
         let auth = state.service_auth.read().await;
         (state.http_client.clone(), auth.token.clone())
     };
 
-    let token = current_token.ok_or((
-        StatusCode::INTERNAL_SERVER_ERROR,
+    let token = current_token.ok_or(AppError::BadRequest(
         "Service not authenticated".to_string(),
     ))?;
 
@@ -140,8 +140,8 @@ pub async fn privatelist_refresh(
     match privatelist::refresh_list(
         &state.privatelist_db,
         &client,
-        &state.bsky_api_url,
-        &user_did,
+        &state.config.bsky_api_url,
+        &user.0,
         &token,
     )
     .await
@@ -179,8 +179,8 @@ pub async fn privatelist_refresh(
                             match privatelist::refresh_list(
                                 &state.privatelist_db,
                                 &client,
-                                &state.bsky_api_url,
-                                &user_did,
+                                &state.config.bsky_api_url,
+                                &user.0,
                                 &new_token,
                             )
                             .await
@@ -188,31 +188,29 @@ pub async fn privatelist_refresh(
                                 Ok(_) => Ok(StatusCode::OK),
                                 Err(e2) => {
                                     tracing::error!("Retry refresh failed: {:#}", e2);
-                                    Err((
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        format!("Retry refresh failed: {:#}", e2),
-                                    ))
+                                    Err(AppError::Internal(anyhow::anyhow!(
+                                        "Retry refresh failed: {:#}",
+                                        e2
+                                    )))
                                 }
                             }
                         }
                         Err(reauth_err) => {
                             tracing::error!("Re-authentication failed: {}", reauth_err);
-                            Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "Re-authentication failed".to_string(),
-                            ))
+                            Err(AppError::Internal(anyhow::anyhow!(
+                                "Re-authentication failed"
+                            )))
                         }
                     }
                 } else {
                     tracing::error!("Cannot refresh token: credentials missing");
-                    Err((
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                    Err(AppError::BadRequest(
                         "Credentials missing for refresh".to_string(),
                     ))
                 }
             } else {
                 tracing::error!("Privatelist refresh error: {:#}", e);
-                Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
+                Err(AppError::Internal(e))
             }
         }
     }
@@ -222,22 +220,19 @@ pub async fn handle_privatelist(
     state: SharedState,
     headers: axum::http::HeaderMap,
     params: FeedQuery,
-) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
     let auth_header = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
+        .ok_or(AppError::Auth(
             "Missing or invalid authorization header".to_string(),
         ))?;
 
     // Extract DID from JWT
     let did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid JWT".to_string()))?;
+        .map_err(|_| AppError::Auth("Invalid JWT".to_string()))?;
 
-    // No need for service token or HTTP client since we read from DB cache now.
-
-    match privatelist::get_feed_skeleton(
+    let res = privatelist::get_feed_skeleton(
         &state.privatelist_db,
         &state.http_client, // Passed but unused
         &did,               // user_did (requester)
@@ -245,14 +240,9 @@ pub async fn handle_privatelist(
         params.cursor.clone(),
         params.limit.unwrap_or(30),
     )
-    .await
-    {
-        Ok(res) => Ok(Json(res)),
-        Err(e) => {
-            tracing::error!("Privatelist feed generation error: {:#}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e)))
-        }
-    }
+    .await?;
+
+    Ok(Json(res))
 }
 
 #[cfg(test)]
@@ -264,10 +254,17 @@ mod tests {
     use tokio::sync::RwLock;
 
     async fn create_test_state() -> SharedState {
+        use crate::state::AppConfig;
         let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
         privatelist::migrate(&pool).await.unwrap();
 
         AppState {
+            config: AppConfig {
+                privatelist_url: "http://localhost:3000".to_string(),
+                bsky_api_url: "https://api.bsky.app".to_string(),
+                client_id: "http://localhost:3000/client-metadata.json".to_string(),
+                redirect_uri: "http://localhost:3000/oauth/callback".to_string(),
+            },
             helloworld: helloworld::State::default(),
             http_client: reqwest::Client::new(),
             service_auth: Arc::new(RwLock::new(ServiceAuth {
@@ -280,7 +277,6 @@ mod tests {
             fakebluesky_db: pool.clone(),
             privatelist_db: pool,
             umami: UmamiClient::new("http://localhost".to_string(), "site_id".to_string(), None),
-            bsky_api_url: "https://api.bsky.app".to_string(),
             key: axum_extra::extract::cookie::Key::generate(),
         }
     }
@@ -300,13 +296,16 @@ mod tests {
     async fn test_privatelist_add_remove_list() {
         let state = create_test_state().await;
         let user_did = "did:plc:user1";
-        let headers = create_auth_headers(user_did);
-        let jar = SignedCookieJar::new(state.key.clone()); // Mock Jar
+        let _headers = create_auth_headers(user_did);
+        let _jar = SignedCookieJar::new(state.key.clone()); // Mock Jar
 
         // 1. Initial list should be empty
-        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
-            .await
-            .unwrap();
+        let list = privatelist_list(
+            AuthenticatedUser(user_did.to_string()),
+            State(state.clone()),
+        )
+        .await
+        .unwrap();
         assert!(list.0.is_empty());
 
         // 2. Add a user
@@ -314,15 +313,22 @@ mod tests {
         let payload = Json(PrivateListTarget {
             target: target_did.to_string(),
         });
-        let status = privatelist_add(jar.clone(), State(state.clone()), headers.clone(), payload)
-            .await
-            .unwrap();
+        let status = privatelist_add(
+            AuthenticatedUser(user_did.to_string()),
+            State(state.clone()),
+            payload,
+        )
+        .await
+        .unwrap();
         assert_eq!(status, StatusCode::OK);
 
         // 3. List should contain target
-        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
-            .await
-            .unwrap();
+        let list = privatelist_list(
+            AuthenticatedUser(user_did.to_string()),
+            State(state.clone()),
+        )
+        .await
+        .unwrap();
         assert_eq!(list.0.len(), 1);
         assert_eq!(list.0[0], target_did);
 
@@ -330,16 +336,56 @@ mod tests {
         let payload = Json(PrivateListTarget {
             target: target_did.to_string(),
         });
-        let status =
-            privatelist_remove(jar.clone(), State(state.clone()), headers.clone(), payload)
-                .await
-                .unwrap();
+        let status = privatelist_remove(
+            AuthenticatedUser(user_did.to_string()),
+            State(state.clone()),
+            payload,
+        )
+        .await
+        .unwrap();
         assert_eq!(status, StatusCode::OK);
 
         // 5. List should be empty again
-        let list = privatelist_list(jar.clone(), State(state.clone()), headers.clone())
-            .await
-            .unwrap();
+        let list = privatelist_list(
+            AuthenticatedUser(user_did.to_string()),
+            State(state.clone()),
+        )
+        .await
+        .unwrap();
         assert!(list.0.is_empty());
     }
+}
+
+pub async fn refresh_token_if_needed(
+    pool: &sqlx::SqlitePool,
+    session: &mut privatelist::Session,
+    config: &crate::state::AppConfig,
+) -> anyhow::Result<String> {
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    // Refresh if expired or expiring in less than 5 minutes
+    if session.expires_at > now + 300 {
+        return Ok(session.access_token.clone());
+    }
+
+    tracing::info!("Access Token expired or expiring soon, refreshing...");
+
+    let client_id = config.client_id.clone();
+    let redirect_uri = config.redirect_uri.clone();
+
+    let oauth_client = privatelist::oauth::OauthClient::new(client_id, redirect_uri);
+    let token_res = oauth_client
+        .refresh_token(&session.refresh_token, &session.dpop_private_key)
+        .await?;
+
+    // Update Session
+    session.access_token = token_res.access_token;
+    if !token_res.refresh_token.is_empty() {
+        session.refresh_token = token_res.refresh_token;
+    }
+    session.expires_at = time::OffsetDateTime::now_utc().unix_timestamp() + token_res.expires_in;
+
+    privatelist::update_session(pool, session).await?;
+
+    tracing::info!("Session Refreshed Successfully");
+    Ok(session.access_token.clone())
 }

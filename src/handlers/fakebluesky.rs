@@ -1,20 +1,17 @@
+use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
-use axum::{http::StatusCode, response::Json};
+use axum::response::Json;
 
 pub async fn handle_fakebluesky(
     state: SharedState,
     params: FeedQuery,
-) -> Result<Json<bsky_core::FeedSkeletonResult>, (StatusCode, String)> {
+) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
     let skeleton = fakebluesky::get_feed_skeleton(
         &state.fakebluesky_db,
         params.limit.unwrap_or(30),
         params.cursor.clone(),
     )
-    .await
-    .map_err(|e| {
-        tracing::error!("Fakebluesky error: {:#}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", e))
-    })?;
+    .await?;
 
     // Convert to FeedSkeletonResult
     let result = bsky_core::FeedSkeletonResult {
