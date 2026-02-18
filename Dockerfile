@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Base stage for common tools
 FROM rust:slim-bookworm AS chef
 WORKDIR /build

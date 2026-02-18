@@ -31,7 +31,23 @@ cargo run
 ```
 
 サーバーは `http://localhost:3000` で起動します。
-管理UI (Frontend) は `http://localhost:3001` で起動します。
+
+## Private List フィード用 ユーザー管理 UI (Frontend)
+
+このリポジトリに含まれる `privatelist` フィード（特定のユーザーのみを表示するフィード）のメンバーを管理するための UI です。
+※ 他のフィード用ではありません。
+
+### ローカルでの開発
+
+バックエンドが起動している状態で、以下のコマンドを実行します。
+
+```bash
+cd webui
+npm install
+npm run dev
+```
+
+Vite の開発サーバーは `http://localhost:3001` で起動します。バックエンドへの API リクエストはプロキシされます。
 
 ## テストの実行
 

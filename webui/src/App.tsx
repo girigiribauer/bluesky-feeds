@@ -1,4 +1,6 @@
 import { Component, createResource, Show } from 'solid-js';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
 
 const fetchUser = async () => {
   const response = await fetch('/privatelist/me');
@@ -10,37 +12,17 @@ const App: Component = () => {
   const [user] = createResource(fetchUser);
 
   return (
-    <div class="card">
-      <h1>Private List</h1>
-      <p>Management Platform</p>
-
-      <Show 
-        when={!user.loading} 
-        fallback={<div class="loading">Initializing...</div>}
+    <Show
+      when={!user.loading}
+      fallback={<div class="loading">Loading...</div>}
+    >
+      <Show
+        when={user()}
+        fallback={<Login />}
       >
-        <Show 
-          when={user()} 
-          fallback={
-            <div>
-              <a href="/oauth/login" class="btn">
-                <span>Login with Bluesky</span>
-              </a>
-            </div>
-          }
-        >
-          {(u) => (
-            <div>
-              <div class="user-info">
-                {u().did}
-              </div>
-              <a href="/oauth/logout" class="btn btn-secondary">
-                Logout
-              </a>
-            </div>
-          )}
-        </Show>
+        {(u) => <Dashboard did={u().did} />}
       </Show>
-    </div>
+    </Show>
   );
 };
 
