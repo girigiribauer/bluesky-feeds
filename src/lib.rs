@@ -83,6 +83,7 @@ fn create_webui_router(state: SharedState) -> Router {
         .route("/oauth/login", get(handlers::login))
         .route("/oauth/callback", get(handlers::callback))
         .route("/oauth/logout", get(handlers::logout))
+        .route_service("/", ServeFile::new("webui/dist/index.html"))
         // Static files with Fallback for SPA (History API Fallback)
         .fallback_service(
             ServeDir::new("webui/dist").not_found_service(ServeFile::new("webui/dist/index.html")),

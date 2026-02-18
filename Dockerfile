@@ -28,7 +28,15 @@ COPY --from=cacher /build/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo
 RUN cargo build --release
 
-# Stage 4: Runtime
+# Stage 4: WebUI Builder
+FROM node:20-slim AS webui-builder
+WORKDIR /build/webui
+COPY webui/package*.json ./
+RUN npm install
+COPY webui/ .
+RUN npm run build
+
+# Stage 5: Runtime
 FROM debian:trixie-slim AS runtime
 
 RUN apt-get update && \
@@ -36,6 +44,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/bluesky-feeds /usr/local/bin/app
+COPY --from=webui-builder /build/webui/dist /usr/local/bin/webui/dist
+WORKDIR /usr/local/bin
 
 ENV PORT=3000
 EXPOSE 3000
