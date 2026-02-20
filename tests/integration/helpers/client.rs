@@ -206,6 +206,13 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
         );
         CREATE INDEX IF NOT EXISTS idx_private_list_post_cache_author ON private_list_post_cache(author_did);
         CREATE INDEX IF NOT EXISTS idx_private_list_post_cache_indexed_at ON private_list_post_cache(indexed_at DESC);
+
+        CREATE TABLE IF NOT EXISTS cache (
+            key        TEXT    PRIMARY KEY,
+            value      TEXT    NOT NULL,
+            expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cache_expires_at ON cache(expires_at);
         "#,
     )
     .execute(&db)
@@ -229,7 +236,8 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
         auth_password: "dummy".to_string(),
         helloworld_db: db.clone(),
         fakebluesky_db: db.clone(),
-        privatelist_db: db,
+        privatelist_db: db.clone(),
+        oneyearago_db: db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             "http://localhost:3000".to_string(),
             "dummy_website_id".to_string(),

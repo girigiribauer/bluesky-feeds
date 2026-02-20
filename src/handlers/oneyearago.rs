@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
 use axum::response::Json;
+use oneyearago::cache::CacheStore;
 
 pub async fn handle_oneyearago(
     state: SharedState,
@@ -28,7 +29,24 @@ pub async fn handle_oneyearago(
         "Service not authenticated"
     )))?;
 
-    // First attempt
+    let cache_store = CacheStore::new(state.oneyearago_db.clone());
+
+    let store_for_cleanup = CacheStore::new(state.oneyearago_db.clone());
+    tokio::spawn(async move {
+        match store_for_cleanup.cleanup().await {
+            Ok(n) if n > 0 => tracing::info!("[cache] Cleaned up {} expired entries", n),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("[cache] Cleanup error: {}", e),
+        }
+    });
+
+    // TODO: 自分自身での動作確認後、全ユーザーに解放する
+    let cache = if did == "did:plc:tsvcmd72oxp47wtixs4qllyi" {
+        Some(&cache_store)
+    } else {
+        None
+    };
+
     match oneyearago::get_feed_skeleton(
         &client,
         auth_header,
@@ -36,6 +54,7 @@ pub async fn handle_oneyearago(
         &did,
         params.limit.unwrap_or(30),
         params.cursor.clone(),
+        cache,
     )
     .await
     {
@@ -71,6 +90,7 @@ pub async fn handle_oneyearago(
                                 &did,
                                 params.limit.unwrap_or(30),
                                 params.cursor.clone(),
+                                cache,
                             )
                             .await
                             {

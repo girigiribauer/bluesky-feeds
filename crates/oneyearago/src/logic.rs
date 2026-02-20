@@ -1,4 +1,5 @@
 use crate::api::PostFetcher;
+use crate::cache::CacheStore;
 use anyhow::Result;
 use bsky_core::FeedItem;
 use chrono::Utc;
@@ -6,6 +7,7 @@ use chrono::Utc;
 const MIN_SEARCH_YEAR: i32 = 2023;
 const DEFAULT_LIMIT: usize = 30;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn fetch_posts_from_past<F: PostFetcher>(
     fetcher: &F,
     service_token: &str,
@@ -14,20 +16,69 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
     limit: usize,
     cursor: Option<String>,
     now_utc: Option<chrono::DateTime<Utc>>, // Injectable "now"
+    cache: Option<&CacheStore>,
 ) -> Result<(Vec<FeedItem>, Option<String>)> {
-    // 1. Timezone
-    let tz_offset = fetcher.determine_timezone(actor, service_token).await?;
+    // 1. Timezone (キャッシュ確認)
+    let tz_offset = if let Some(store) = cache {
+        match store.get_timezone(actor).await {
+            Ok(Some(cached)) => {
+                tracing::info!("[cache] TZ hit for {}", actor);
+                cached
+            }
+            _ => {
+                // キャッシュなし or エラー → APIで取得してキャッシュ
+                let offset = fetcher.determine_timezone(actor, service_token).await?;
+                if let Err(e) = store.set_timezone(actor, offset.local_minus_utc()).await {
+                    tracing::warn!("[cache] Failed to set TZ cache: {}", e);
+                }
+                tracing::info!("[cache] TZ miss for {}, fetched from API", actor);
+                offset
+            }
+        }
+    } else {
+        fetcher.determine_timezone(actor, service_token).await?
+    };
 
     // 現在時刻 (UTC) -> ターゲットタイムゾーンへ変換
     let now_utc = now_utc.unwrap_or_else(Utc::now);
     let now_tz = now_utc.with_timezone(&tz_offset);
 
-    let mut feed_items = Vec::new();
     let safe_limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
+
+    // フィード結果キャッシュのキー生成に使う日付文字列 (ユーザーの現地の今日)
+    let today_naive = now_tz.date_naive();
+    let date_key = today_naive.format("%y%m%d").to_string();
+
+    // フィード結果のキャッシュ確認 (カーソルでページを識別)
+    let cursor_str = cursor.as_deref();
+    if let Some(store) = cache {
+        match store
+            .get_feed(actor, &date_key, safe_limit, cursor_str)
+            .await
+        {
+            Ok(Some(cached)) => {
+                tracing::info!("[cache] Feed hit for {} date={}", actor, date_key);
+                let feed_items: Vec<FeedItem> = cached
+                    .uris
+                    .into_iter()
+                    .map(|u| FeedItem { post: u })
+                    .collect();
+                return Ok((feed_items, cached.next));
+            }
+            Ok(None) => {
+                tracing::info!("[cache] Feed miss for {} date={}", actor, date_key);
+            }
+            Err(e) => {
+                tracing::warn!("[cache] Feed cache error: {}", e);
+            }
+        }
+    }
+
+    let mut feed_items = Vec::new();
 
     // Cursor Parsing
     // Format: v1::{years_ago}::{api_cursor}
-    let (start_year, mut current_api_cursor) = if let Some(c) = cursor {
+    let (start_year, mut current_api_cursor) = if let Some(c) = cursor.as_deref() {
         let parts: Vec<&str> = c.splitn(3, "::").collect();
         if parts.len() >= 2 && parts[0] == "v1" {
             let y = parts[1].parse::<i32>().unwrap_or(1);
@@ -118,6 +169,34 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
         }
     };
 
+    // フィード結果をキャッシュに保存
+    if let Some(store) = cache {
+        // TTL: ユーザーの現地の「今日の終わり」まで
+        let today_end_utc = {
+            let tomorrow = today_naive.succ_opt().unwrap_or(today_naive);
+            tomorrow
+                .and_hms_opt(0, 0, 0)
+                .and_then(|dt| dt.and_local_timezone(tz_offset).single())
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|| now_utc + chrono::Duration::hours(24))
+        };
+        let uris: Vec<String> = feed_items.iter().map(|f| f.post.clone()).collect();
+        if let Err(e) = store
+            .set_feed(
+                actor,
+                &date_key,
+                safe_limit,
+                cursor_str,
+                uris,
+                next_cursor_string.clone(),
+                today_end_utc,
+            )
+            .await
+        {
+            tracing::warn!("[cache] Failed to set feed cache: {}", e);
+        }
+    }
+
     Ok((feed_items, next_cursor_string))
 }
 
@@ -180,10 +259,18 @@ mod tests {
         // Loop checks limits. feed_items=30 >= limit 30. Break.
         // Return next cursor: v1::1::cursor_abc
 
-        let (items, cursor) =
-            fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None)
-                .await
-                .unwrap();
+        let (items, cursor) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "user_token",
+            "did:plc:test",
+            30,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(items.len(), 30);
         assert_eq!(cursor, Some("v1::1::cursor_abc".to_string()));
     }
@@ -255,10 +342,18 @@ mod tests {
         // Loop start. feed_items(30) >= 30. Break.
         // Resumption logic: current_api_cursor is None. Next cursor = v1::3::
 
-        let (items, cursor) =
-            fetch_posts_from_past(&mock, "token", "user_token", "did:plc:test", 30, None, None)
-                .await
-                .unwrap();
+        let (items, cursor) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "user_token",
+            "did:plc:test",
+            30,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(items.len(), 30);
         assert_eq!(items[0].post, "year1:0");
@@ -290,6 +385,7 @@ mod tests {
             30,
             None,
             Some(now),
+            None,
         )
         .await
         .unwrap();
@@ -336,6 +432,7 @@ mod tests {
             "did:plc:test",
             1,
             input_cursor,
+            None,
             None,
         )
         .await
@@ -385,6 +482,7 @@ mod tests {
             1,
             input_cursor,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -396,4 +494,330 @@ mod tests {
     /*
     // 観点4: 日付境界 (省略 - ロジックは同じだが設定が面倒なため、他のテストでカバー)
      */
+
+    // =========================================================================
+    // 統合テスト: MockFetcher + in-memory CacheStore を使ったキャッシュ統合テスト
+    // =========================================================================
+    //
+    // 単体テストは「キャッシュ単体」「ロジック単体（cache=None）」を検証しているが、
+    // 統合テストはキャッシュがロジックに正しく統合されているかを検証する。
+    // 特に「昨日のデータを今日も返す」「2回目もAPIを叩いてしまう」といった
+    // 本番で起こりやすいバグをここで捕捉することが目的。
+
+    use sqlx::SqlitePool;
+
+    async fn make_cache_store() -> crate::cache::CacheStore {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        crate::cache::migrate(&pool).await.unwrap();
+        crate::cache::CacheStore::new(pool)
+    }
+
+    // 統合テスト1:
+    // TZキャッシュヒット時は determine_timezone が呼ばれない（API節約の核心）
+    #[tokio::test]
+    async fn integration_tz_cache_hit_skips_api() {
+        let mut mock = MockPostFetcher::new();
+
+        // determine_timezone は一度だけ呼ばれる（2回目はキャッシュヒット）
+        mock.expect_determine_timezone()
+            .times(1)
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+
+        mock.expect_search_posts()
+            .returning(|_, _, _, _, _, _| Ok((vec![], None)));
+
+        let cache = make_cache_store().await;
+
+        // 1回目: APIを叩いてTZを取得・保存
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            30,
+            None,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // 2回目: TZキャッシュがヒットするので determine_timezone は呼ばれない
+        // (times(1) の制約により、2回呼ばれるとパニック)
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            30,
+            None,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+    }
+
+    // 統合テスト2:
+    // フィードキャッシュヒット時は search_posts が呼ばれない（最重要：二重呼び出し防止）
+    #[tokio::test]
+    async fn integration_feed_cache_hit_skips_search_posts() {
+        let mut mock = MockPostFetcher::new();
+
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+
+        // limit=1 とすることで、最初の search_posts の1件目で limit に達し
+        // その年で検索が完了する（次の年に進まない）。
+        // よって 1回目のリクエスト全体で search_posts は1回だけ呼ばれる。
+        // 2回目はフィードキャッシュヒットのため search_posts は呼ばれない。
+        // → 合計で times(1) が成立する。
+        mock.expect_search_posts()
+            .times(1)
+            .returning(|_, _, _, _, _, _| {
+                Ok((
+                    vec![PostView {
+                        uri: "at://test/post/1".to_string(),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    }],
+                    Some("cursor_next".to_string()), // カーソルが残っているので「年は終わっていない」
+                ))
+            });
+
+        // TTL内にキャッシュが有効であることを保証するため、十分未来の日時を使用する。
+        // (TTL = " fixed_now の翌日 00:00 UTC"。過去の日付だとテスト実行時点で即失効するため)
+        let fixed_now: chrono::DateTime<chrono::Utc> = "2099-03-01T12:00:00Z".parse().unwrap();
+
+        let cache = make_cache_store().await;
+
+        // 1回目: APIを叩いてフィードを取得・保存 (limit=1)
+        let (items1, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            None,
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // 2回目: フィードキャッシュがヒットするので search_posts は呼ばれない
+        let (items2, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            None,
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(items1.len(), 1);
+        assert_eq!(items2.len(), 1, "キャッシュから正しく返ってくること");
+        assert_eq!(items2[0].post, "at://test/post/1");
+    }
+
+    // 統合テスト3:
+    // 日付を跨いだ後はフィードキャッシュが無効化され、再度APIが呼ばれる
+    // （「昨日の投稿が今日も出続ける」という最も危険なバグを防ぐ）
+    //
+    // now_utc=2025-03-01 と 2025-03-02 を注入し、ウォーターフォールが同一年内で
+    // 完結するよう limit=1 かつカーソルありで返して即 limit 到達させる。
+    // これにより、「今日」リクエストで search_posts が1回、「翌日」でも1回 → 計2回。
+    #[tokio::test]
+    async fn integration_feed_cache_invalidated_after_date_change() {
+        let mut mock = MockPostFetcher::new();
+
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+
+        // search_posts は 2回呼ばれる（「今日」と「翌日」でそれぞれ1回）
+        // カーソルを返すことで years_ago が進まず limit=1 で即終了する
+        mock.expect_search_posts()
+            .times(2)
+            .returning(|_, _, _, _, _, _| {
+                Ok((
+                    vec![PostView {
+                        uri: "at://test/post/new".to_string(),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    }],
+                    Some("cursor_next".to_string()),
+                ))
+            });
+
+        let cache = make_cache_store().await;
+
+        // 1回目: 「今日」でリクエスト → キャッシュ保存 (limit=1)
+        // 2099年なので expires_at（2100-03-01）が十分未来 → テスト実行時に有効
+        let today: chrono::DateTime<chrono::Utc> = "2099-03-01T12:00:00Z".parse().unwrap();
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            None,
+            Some(today),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // 2回目: 「翌日」でリクエスト → キャッシュの日付キーが "250301" ≠ "250302" のためミス → APIを叩く
+        // (times(2) の制約により、3回以上呼ばれるとパニック)
+        let tomorrow: chrono::DateTime<chrono::Utc> = "2099-03-02T12:00:00Z".parse().unwrap();
+        let (items, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            None,
+            Some(tomorrow),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            items.len(),
+            1,
+            "翌日のリクエストもAPIから正しく取得できること"
+        );
+        assert_eq!(items[0].post, "at://test/post/new");
+    }
+
+    // 統合テスト4:
+    // cursor が異なる場合は別ページとして別々にキャッシュされる
+    // （「2ページ目の結果が1ページ目のキャッシュを上書きする」バグを防ぐ）
+    #[tokio::test]
+    async fn integration_feed_cache_separated_by_cursor() {
+        let mut mock = MockPostFetcher::new();
+
+        mock.expect_determine_timezone()
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(0).unwrap()));
+
+        // 1ページ目（cursor=None）と2ページ目（cursor=Some）で計2回呼ばれる
+        mock.expect_search_posts()
+            .times(2)
+            .returning(|_, _, _, _, _, cursor| {
+                let uri = if cursor.is_none() {
+                    "at://test/post/page1"
+                } else {
+                    "at://test/post/page2"
+                };
+                Ok((
+                    vec![PostView {
+                        uri: uri.to_string(),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    }],
+                    None,
+                ))
+            });
+
+        let fixed_now: chrono::DateTime<chrono::Utc> = "2025-03-01T12:00:00Z".parse().unwrap();
+        let cache = make_cache_store().await;
+
+        // 1ページ目
+        let (items_p1, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            None,
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // 2ページ目 (cursor を指定)
+        let (items_p2, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:test",
+            1,
+            Some("v1::1::some_cursor".to_string()),
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(items_p1[0].post, "at://test/post/page1");
+        assert_eq!(
+            items_p2[0].post, "at://test/post/page2",
+            "別ページは別キャッシュであること"
+        );
+    }
+
+    // 統合テスト5:
+    // TZキャッシュミス（初回）後、続けてTZキャッシュがヒットする正常経路の確認
+    // (TZキャッシュが正しく書き込まれているかの結合確認)
+    #[tokio::test]
+    async fn integration_tz_miss_then_hit() {
+        let mut mock = MockPostFetcher::new();
+
+        // JST (UTC+9) を返す
+        mock.expect_determine_timezone()
+            .times(1)
+            .returning(|_, _| Ok(chrono::FixedOffset::east_opt(9 * 3600).unwrap()));
+
+        mock.expect_search_posts()
+            .returning(|_, _, _, _, _, _| Ok((vec![], None)));
+
+        let cache = make_cache_store().await;
+
+        // 1回目: キャッシュなし → API から JST を取得
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:jst",
+            30,
+            None,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // キャッシュに保存されているか直接確認
+        let tz = cache.get_timezone("did:plc:jst").await.unwrap();
+        assert!(tz.is_some(), "TZがキャッシュに保存されているべき");
+        assert_eq!(
+            tz.unwrap().local_minus_utc(),
+            9 * 3600,
+            "JSTのオフセットが正しく保存されているべき"
+        );
+
+        // 2回目: TZキャッシュヒット → determine_timezone は呼ばれない
+        // (times(1) の制約で、2回呼ばれるとパニック)
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:jst",
+            30,
+            None,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+    }
 }

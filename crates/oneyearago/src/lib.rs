@@ -1,8 +1,10 @@
 pub mod api;
+pub mod cache;
 pub mod logic;
 mod timezone;
 
 use crate::api::BlueskyFetcher;
+use crate::cache::CacheStore;
 use anyhow::Result;
 use bsky_core::FeedSkeletonResult;
 use reqwest::Client;
@@ -14,6 +16,7 @@ pub async fn get_feed_skeleton(
     actor: &str,
     limit: usize,
     cursor: Option<String>,
+    cache: Option<&CacheStore>,
 ) -> Result<FeedSkeletonResult> {
     let fetcher = BlueskyFetcher::new(client.clone());
     let (feed_items, next_cursor) = logic::fetch_posts_from_past(
@@ -24,6 +27,7 @@ pub async fn get_feed_skeleton(
         limit,
         cursor,
         None,
+        cache,
     )
     .await?;
 

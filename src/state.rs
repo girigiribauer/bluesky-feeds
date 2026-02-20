@@ -31,6 +31,7 @@ pub struct AppState {
     pub helloworld_db: SqlitePool,
     pub fakebluesky_db: SqlitePool,
     pub privatelist_db: SqlitePool,
+    pub oneyearago_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,
     pub key: axum_extra::extract::cookie::Key,
 }

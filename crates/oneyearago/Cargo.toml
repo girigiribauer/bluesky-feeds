@@ -13,6 +13,7 @@ tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 atrium-api = { workspace = true }
+sqlx = { workspace = true }
 async-trait = "0.1.89"
 chrono-tz = "0.9"
 

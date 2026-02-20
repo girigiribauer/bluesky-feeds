@@ -50,6 +50,16 @@ async fn main() -> anyhow::Result<()> {
     let privatelist_db = bluesky_feeds::connect_database(&privatelist_db_url).await?;
     privatelist::migrate(&privatelist_db).await?;
 
+    // Initialize OneYearAgo Database
+    let oneyearago_db_url = std::env::var("ONEYEARAGO_DB_URL")
+        .unwrap_or_else(|_| "sqlite:data/oneyearago.db".to_string());
+    tracing::info!(
+        "Connecting to oneyearago cache database: {}",
+        oneyearago_db_url
+    );
+    let oneyearago_db = bluesky_feeds::connect_database(&oneyearago_db_url).await?;
+    oneyearago::cache::migrate(&oneyearago_db).await?;
+
     // Initialize HTTP Client
     let http_client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
@@ -98,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
         helloworld_db,
         fakebluesky_db,
         privatelist_db,
+        oneyearago_db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
             std::env::var("UMAMI_WEBSITE_ID").expect("UMAMI_WEBSITE_ID must be set"),
