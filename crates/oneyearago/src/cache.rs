@@ -9,7 +9,7 @@
 //! - 物理削除: cleanup() を非同期で呼び出してゴミを掃除
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool};
 
@@ -189,15 +189,58 @@ impl CacheStore {
     /// 期限切れエントリを物理削除する
     ///
     /// ユーザーのレスポンスを遅延させないよう、呼び出し元は `tokio::spawn` で非同期実行すること。
+    /// 期限切れエントリを物理削除する
     pub async fn cleanup(&self) -> Result<u64> {
-        let now = Utc::now().timestamp();
+        self.cleanup_at(Utc::now()).await
+    }
+
+    /// 指定時刻（UTC）を基準に期限切れエントリを物理削除する
+    ///
+    /// 【実行条件】
+    /// 1. JST 午前4時以降であること。
+    /// 2. その日にまだクリーンアップが実行されていないこと（1日1回制限）。
+    pub async fn cleanup_at(&self, now: chrono::DateTime<Utc>) -> Result<u64> {
+        let jst_offset = FixedOffset::east_opt(9 * 3600).unwrap();
+        let now_jst = now.with_timezone(&jst_offset);
+
+        // 条件1: 4時前なら何もしない
+        if now_jst.hour() < 4 {
+            tracing::debug!(
+                "[cache] Cleanup skipped: before 4am JST (current: {:02}:00)",
+                now_jst.hour()
+            );
+            return Ok(0);
+        }
+
+        let today = now_jst.format("%y%m%d").to_string();
+        let status_key = "internal:last_cleanup_date";
+
+        // 条件2: 今日すでに実行済みならスキップ
+        if let Some(last_date) = self.get_raw(status_key).await? {
+            if last_date == today {
+                tracing::debug!(
+                    "[cache] Cleanup skipped: already executed today ({})",
+                    today
+                );
+                return Ok(0);
+            }
+        }
+
+        // 物理削除の実行
+        let now_ts = now.timestamp();
         let result = sqlx::query("DELETE FROM cache WHERE expires_at <= ?")
-            .bind(now)
+            .bind(now_ts)
             .execute(&self.pool)
             .await
             .context("cache: cleanup query failed")?;
 
-        Ok(result.rows_affected())
+        let affected = result.rows_affected();
+
+        // 実行済みフラグを更新（10年先まで消えないキーとして保存）
+        let far_future = now + chrono::Duration::days(365 * 10);
+        self.set_raw(status_key, &today, far_future).await?;
+
+        Ok(affected)
     }
 }
 
@@ -387,5 +430,55 @@ mod tests {
         // 有効なキーはまだ存在する
         let still_there = store.get_raw("valid_key").await.unwrap();
         assert!(still_there.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_trigger_conditions() {
+        use chrono::TimeZone;
+        let store = in_memory_store().await;
+
+        // 【準備】期限切れデータを1件用意
+        let past = Utc::now() - Duration::seconds(1);
+        store
+            .set_raw("expired_key", r#"{"offset":0}"#, past)
+            .await
+            .unwrap();
+
+        // 1. JST 午前3:00 -> 実行されない
+        let t1 = Utc.with_ymd_and_hms(2026, 2, 21, 18, 0, 0).unwrap(); // 3:00 JST
+        assert_eq!(
+            store.cleanup_at(t1).await.unwrap(),
+            0,
+            "4時前は実行されないこと"
+        );
+
+        // 2. JST 午前4:00 (その日初めてのアクセス) -> 実行される
+        let t2 = Utc.with_ymd_and_hms(2026, 2, 21, 19, 0, 0).unwrap(); // 4:00 JST
+        assert_eq!(
+            store.cleanup_at(t2).await.unwrap(),
+            1,
+            "4時以降の初回は実行されること"
+        );
+
+        // 3. JST 午前4:10 (同じ日の2回目) -> スキップされる
+        let t3 = Utc.with_ymd_and_hms(2026, 2, 21, 19, 10, 0).unwrap(); // 4:10 JST
+        assert_eq!(
+            store.cleanup_at(t3).await.unwrap(),
+            0,
+            "同じ日の2回目以降は実行されないこと"
+        );
+
+        // 4. 翌日の JST 午前4:00 -> 再び実行される
+        // 新たなゴミを1件用意
+        store
+            .set_raw("expired_key2", r#"{"offset":0}"#, past)
+            .await
+            .unwrap();
+        let t4 = Utc.with_ymd_and_hms(2026, 2, 22, 19, 0, 0).unwrap(); // 翌4:00 JST
+        assert_eq!(
+            store.cleanup_at(t4).await.unwrap(),
+            1,
+            "翌日になれば再び実行されること"
+        );
     }
 }

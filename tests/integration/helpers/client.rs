@@ -13,7 +13,8 @@ use tower::ServiceExt; // for oneshot
                        // use tower::Service; // removed unused import
 
 pub struct TestClient {
-    router: Router,
+    pub router: Router,
+    pub state: SharedState,
 }
 
 impl TestClient {
@@ -23,8 +24,8 @@ impl TestClient {
 
     pub async fn new_with_bsky_url(bsky_api_url: Option<String>) -> Self {
         let state = create_test_state(bsky_api_url).await;
-        let router = app(state);
-        Self { router }
+        let router = app(state.clone());
+        Self { router, state }
     }
 
     pub async fn get_feed_skeleton(

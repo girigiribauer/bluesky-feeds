@@ -31,15 +31,6 @@ pub async fn handle_oneyearago(
 
     let cache_store = CacheStore::new(state.oneyearago_db.clone());
 
-    let store_for_cleanup = CacheStore::new(state.oneyearago_db.clone());
-    tokio::spawn(async move {
-        match store_for_cleanup.cleanup().await {
-            Ok(n) if n > 0 => tracing::info!("[cache] Cleaned up {} expired entries", n),
-            Ok(_) => {}
-            Err(e) => tracing::warn!("[cache] Cleanup error: {}", e),
-        }
-    });
-
     // TODO: 自分自身での動作確認後、全ユーザーに解放する
     let cache = if did == "did:plc:tsvcmd72oxp47wtixs4qllyi" {
         Some(&cache_store)
@@ -47,7 +38,7 @@ pub async fn handle_oneyearago(
         None
     };
 
-    match oneyearago::get_feed_skeleton(
+    let results = match oneyearago::get_feed_skeleton(
         &client,
         auth_header,
         &token,
@@ -122,5 +113,19 @@ pub async fn handle_oneyearago(
                 Err(AppError::Internal(e))
             }
         }
+    };
+
+    // 正常終了した場合のみ、非同期でクリーンアップを実行する
+    if results.is_ok() {
+        let store_for_cleanup = CacheStore::new(state.oneyearago_db.clone());
+        tokio::spawn(async move {
+            match store_for_cleanup.cleanup().await {
+                Ok(n) if n > 0 => tracing::info!("[cache] Cleaned up {} expired entries", n),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("[cache] Cleanup error: {}", e),
+            }
+        });
     }
+
+    results
 }

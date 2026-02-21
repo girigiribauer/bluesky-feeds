@@ -127,3 +127,49 @@ async fn test_get_feed_skeleton_malformed_token() {
     // oneyearago expects valid JWT structure
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+/// 観点: OneYearAgoフィード取得後に、非同期でクリーンアップが起動されるか（副作用の検証）
+#[tokio::test]
+async fn test_get_feed_skeleton_oneyearago_cleanup_trigger() {
+    let client = TestClient::new().await;
+    let auth = TestAuth::new("did:plc:alice");
+    let db = &client.state.oneyearago_db;
+
+    // 1. 最初はクリーンアップ実行記録がないことを確認
+    let last_date: Option<String> =
+        sqlx::query_scalar("SELECT value FROM cache WHERE key = 'internal:last_cleanup_date'")
+            .fetch_optional(db)
+            .await
+            .unwrap();
+    assert!(last_date.is_none(), "最初は記録がないはず");
+
+    // 2. フィードを取得（トリガーを引く）
+    let (status, _) = client
+        .get_feed_skeleton(
+            "at://did:example:123/app.bsky.feed.generator/oneyearago",
+            Some(&auth.header_value()),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 3. 非同期実行を待つ（tokio::spawn なので少し待つ必要がある）
+    // 数ミリ秒で終わるはずだが、念のため少し待機してリトライする
+    let mut success = false;
+    for _ in 0..10 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        let date: Option<String> =
+            sqlx::query_scalar("SELECT value FROM cache WHERE key = 'internal:last_cleanup_date'")
+                .fetch_optional(db)
+                .await
+                .unwrap();
+        if date.is_some() {
+            success = true;
+            break;
+        }
+    }
+
+    assert!(
+        success,
+        "フィード取得後にクリーンアップの実行記録が作成されるべき"
+    );
+}
