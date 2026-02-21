@@ -30,13 +30,7 @@ pub async fn handle_oneyearago(
     )))?;
 
     let cache_store = CacheStore::new(state.oneyearago_db.clone());
-
-    // TODO: 自分自身での動作確認後、全ユーザーに解放する
-    let cache = if did == "did:plc:tsvcmd72oxp47wtixs4qllyi" {
-        Some(&cache_store)
-    } else {
-        None
-    };
+    let cache = Some(&cache_store);
 
     let results = match oneyearago::get_feed_skeleton(
         &client,

@@ -22,7 +22,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
     let tz_offset = if let Some(store) = cache {
         match store.get_timezone(actor).await {
             Ok(Some(cached)) => {
-                tracing::info!("[cache] TZ hit for {}", actor);
+                tracing::debug!("[cache] TZ hit for {}", actor);
                 cached
             }
             _ => {
@@ -31,7 +31,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
                 if let Err(e) = store.set_timezone(actor, offset.local_minus_utc()).await {
                     tracing::warn!("[cache] Failed to set TZ cache: {}", e);
                 }
-                tracing::info!("[cache] TZ miss for {}, fetched from API", actor);
+                tracing::debug!("[cache] TZ miss for {}, fetched from API", actor);
                 offset
             }
         }
@@ -62,7 +62,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
             .await
         {
             Ok(Some(cached)) => {
-                tracing::info!("[cache] Feed hit for {} date={}", actor, date_key);
+                tracing::debug!("[cache] Feed hit for {} date={}", actor, date_key);
                 let feed_items: Vec<FeedItem> = cached
                     .uris
                     .into_iter()
@@ -71,7 +71,7 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
                 return Ok((feed_items, cached.next));
             }
             Ok(None) => {
-                tracing::info!("[cache] Feed miss for {} date={}", actor, date_key);
+                tracing::debug!("[cache] Feed miss for {} date={}", actor, date_key);
             }
             Err(e) => {
                 tracing::warn!("[cache] Feed cache error: {}", e);

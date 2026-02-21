@@ -437,8 +437,8 @@ mod tests {
         use chrono::TimeZone;
         let store = in_memory_store().await;
 
-        // 【準備】期限切れデータを1件用意
-        let past = Utc::now() - Duration::seconds(1);
+        // 【準備】期限切れデータを1件用意（確実にテスト時刻より前の過去時刻にする）
+        let past = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
         store
             .set_raw("expired_key", r#"{"offset":0}"#, past)
             .await
@@ -468,8 +468,8 @@ mod tests {
             "同じ日の2回目以降は実行されないこと"
         );
 
-        // 4. 翌日の JST 午前4:00 -> 再び実行される
         // 新たなゴミを1件用意
+        let past = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
         store
             .set_raw("expired_key2", r#"{"offset":0}"#, past)
             .await
