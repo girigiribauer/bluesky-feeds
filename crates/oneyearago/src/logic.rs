@@ -46,8 +46,13 @@ pub async fn fetch_posts_from_past<F: PostFetcher>(
     let safe_limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
 
     // フィード結果キャッシュのキー生成に使う日付文字列 (ユーザーの現地の今日)
+    // タイムゾーンが異なれば同じ日付でも取得範囲が違うため、オフセットもキーに含める
     let today_naive = now_tz.date_naive();
-    let date_key = today_naive.format("%y%m%d").to_string();
+    let date_key = format!(
+        "{}:{}",
+        today_naive.format("%y%m%d"),
+        tz_offset.local_minus_utc()
+    );
 
     // フィード結果のキャッシュ確認 (カーソルでページを識別)
     let cursor_str = cursor.as_deref();
@@ -819,5 +824,76 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    // 統合テスト6:
+    // 同一日付であってもタイムゾーン（オフセット）が異なる場合はキャッシュミスする
+    // （UX改善：TZ変更時の即時反映を保証するテスト）
+    #[tokio::test]
+    async fn integration_feed_cache_invalidated_after_timezone_change() {
+        let mut mock = MockPostFetcher::new();
+
+        // 1回目：JST (+9) で取得
+        // 2回目：PST (-8) で取得（DID変更により再取得が発生するシナリオ）
+        mock.expect_determine_timezone()
+            .times(2)
+            .returning(|handle, _| {
+                if handle == "did:plc:user:jst" {
+                    Ok(chrono::FixedOffset::east_opt(9 * 3600).unwrap())
+                } else {
+                    Ok(chrono::FixedOffset::east_opt(-8 * 3600).unwrap())
+                }
+            });
+
+        // search_posts は 2回呼ばれるべき（日付は同じだが、オフセットが違うため）
+        mock.expect_search_posts()
+            .times(2)
+            .returning(|_, _, _, _, _, _| {
+                Ok((
+                    vec![PostView {
+                        uri: "at://test/post/1".to_string(),
+                        record: PostRecord {
+                            created_at: String::new(),
+                        },
+                    }],
+                    None,
+                ))
+            });
+
+        let cache = make_cache_store().await;
+        // 同じ「今日」の日時を固定（UTC 12:00 は JST でも PST でも 2/21）
+        let fixed_now: chrono::DateTime<chrono::Utc> = "2025-02-21T12:00:00Z".parse().unwrap();
+
+        // 1. JST でリクエスト → キャッシュ保存
+        fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:user:jst",
+            1,
+            None,
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        // 2. PST でリクエスト（同じ actor だが設定が切り替わったと想定）
+        // オフセットがキーに含まれているため、日付が同じ "250221" でもミスするはず
+        let (items, _) = fetch_posts_from_past(
+            &mock,
+            "token",
+            "auth",
+            "did:plc:user:pst", // 名前を変えて TZ 再取得を誘発
+            1,
+            None,
+            Some(fixed_now),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(items.len(), 1);
+        // mock.expect_search_posts().times(2) が満たされれば成功
     }
 }
