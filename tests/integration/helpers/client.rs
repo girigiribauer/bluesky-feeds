@@ -214,6 +214,11 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
             expires_at INTEGER NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_cache_expires_at ON cache(expires_at);
+
+        CREATE TABLE IF NOT EXISTS jetstream_cursor (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            cursor_us INTEGER NOT NULL
+        );
         "#,
     )
     .execute(&db)

@@ -300,4 +300,20 @@ mod tests {
         let config = BlueDetectionConfig::default();
         assert!(analyze_top_pixels(&img, &config));
     }
+
+    #[tokio::test]
+    async fn test_problematic_image() {
+        let url = "https://cdn.bsky.app/img/feed_fullsize/plain/did:plc:tsvcmd72oxp47wtixs4qllyi/bafkreievnlxsspil6b5lvl6joidcuzfmc3tlc4ilzmfvnbtojgkpnldrym@jpeg";
+        let config = BlueDetectionConfig::default();
+
+        match analyze_image(url, &config).await {
+            Ok(res) => {
+                println!("Analysis result: {:?}", res);
+                assert!(!res.is_blue_sky, "Should NOT be blue sky: {:?}", res);
+            }
+            Err(e) => {
+                println!("Test skipped/failed (network?): {}", e);
+            }
+        }
+    }
 }

@@ -2,7 +2,7 @@ use bluesky_feeds::app;
 use bluesky_feeds::state::AppState;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -42,6 +42,31 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to fakebluesky database: {}", fakebluesky_db_url);
     let fakebluesky_db = bluesky_feeds::connect_database(&fakebluesky_db_url).await?;
     fakebluesky::migrate(&fakebluesky_db).await?;
+
+    // Jetstream カーソル保存テーブルの作成（バックフィル対応）
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS jetstream_cursor (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            cursor_us INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(&fakebluesky_db)
+    .await?;
+
+    // 前回保存したカーソルを読み込む
+    let initial_cursor: Option<i64> =
+        sqlx::query_scalar("SELECT cursor_us FROM jetstream_cursor WHERE id = 1")
+            .fetch_optional(&fakebluesky_db)
+            .await
+            .unwrap_or(None);
+
+    if let Some(cursor) = initial_cursor {
+        tracing::info!("Resuming Jetstream from saved cursor: {}", cursor);
+    } else {
+        tracing::info!("No saved Jetstream cursor found. Starting from live tail.");
+    }
 
     // Initialize Private List Database
     let privatelist_db_url = std::env::var("PRIVATELIST_DB_URL")
@@ -128,20 +153,51 @@ async fn main() -> anyhow::Result<()> {
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
         let state_for_consumer = app_state.clone();
+        let cursor_db = app_state.fakebluesky_db.clone();
+        // 現在のカーソルを共有するための Arc<Mutex>
+        let current_cursor = Arc::new(Mutex::new(initial_cursor));
+
         tokio::spawn(async move {
-            let result = jetstream::connect_and_run(move |event| {
-                let state = state_for_consumer.clone();
-                async move {
-                    let helloworld_pool = state.helloworld_db.clone();
-                    let fakebluesky_pool = state.fakebluesky_db.clone();
+            let cursor_for_callback = current_cursor.clone();
+            let result = jetstream::connect_and_run(
+                move |event| {
+                    let state = state_for_consumer.clone();
+                    let cursor_ref = cursor_for_callback.clone();
+                    let db = cursor_db.clone();
+                    async move {
+                        let helloworld_pool = state.helloworld_db.clone();
+                        let fakebluesky_pool = state.fakebluesky_db.clone();
 
-                    // Process event for helloworld
-                    helloworld::process_event(&helloworld_pool, &event).await;
+                        // Process event for helloworld and fakebluesky
+                        let hw_cursor = helloworld::process_event(&helloworld_pool, &event).await;
+                        let fb_cursor = fakebluesky::process_event(&fakebluesky_pool, &event).await;
 
-                    // Process event for fakebluesky
-                    fakebluesky::process_event(&fakebluesky_pool, &event).await;
-                }
-            })
+                        // 最新の time_us をカーソルとして保存
+                        let new_cursor = fb_cursor.or(hw_cursor);
+                        if let Some(cursor_us) = new_cursor {
+                            let mut current = cursor_ref.lock().await;
+                            *current = Some(cursor_us);
+                            drop(current);
+
+                            // DB への書き込み（失敗してもパニックしない）
+                            if let Err(e) = sqlx::query(
+                                "INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)"
+                            )
+                            .bind(cursor_us)
+                            .execute(&db)
+                            .await
+                            {
+                                tracing::error!("Failed to save Jetstream cursor: {}", e);
+                            }
+
+                            Some(cursor_us)
+                        } else {
+                            None
+                        }
+                    }
+                },
+                initial_cursor,
+            )
             .await;
 
             if let Err(e) = result {
