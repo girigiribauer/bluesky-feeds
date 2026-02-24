@@ -13,16 +13,7 @@ pub struct FeedQuery {
 pub type SharedState = AppState;
 
 #[derive(Clone)]
-pub struct AppConfig {
-    pub privatelist_url: String,
-    pub bsky_api_url: String,
-    pub client_id: String,
-    pub redirect_uri: String,
-}
-
-#[derive(Clone)]
 pub struct AppState {
-    pub config: AppConfig,
     pub helloworld: helloworld::State,
     pub http_client: reqwest::Client,
     pub service_auth: Arc<RwLock<ServiceAuth>>,
@@ -33,13 +24,6 @@ pub struct AppState {
     pub privatelist_db: SqlitePool,
     pub oneyearago_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,
-    pub key: axum_extra::extract::cookie::Key,
-}
-
-impl axum::extract::FromRef<AppState> for axum_extra::extract::cookie::Key {
-    fn from_ref(state: &AppState) -> Self {
-        state.key.clone()
-    }
 }
 
 #[derive(Clone, Debug)]

@@ -11,13 +11,13 @@ pub async fn handle_oneyearago(
     let auth_header = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or(AppError::Auth(
-            "Missing or invalid authorization header".to_string(),
+        .ok_or(AppError::Unauthorized(
+            "Missing Authorization header".to_string(),
         ))?;
 
     // Extract DID from JWT
-    let did = bsky_core::extract_did_from_jwt(Some(auth_header))
-        .map_err(|_| AppError::Auth("Invalid JWT".to_string()))?;
+    let requester_did = bsky_core::extract_did_from_jwt(Some(auth_header))
+        .map_err(|_| AppError::Unauthorized("Invalid JWT".to_string()))?;
 
     // Read client and current token
     let (client, current_token) = {
@@ -36,7 +36,7 @@ pub async fn handle_oneyearago(
         &client,
         auth_header,
         &token,
-        &did,
+        &requester_did,
         params.limit.unwrap_or(30),
         params.cursor.clone(),
         cache,
@@ -72,7 +72,7 @@ pub async fn handle_oneyearago(
                                 &client,
                                 auth_header,
                                 &new_token,
-                                &did,
+                                &requester_did,
                                 params.limit.unwrap_or(30),
                                 params.cursor.clone(),
                                 cache,

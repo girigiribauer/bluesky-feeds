@@ -10,8 +10,8 @@ pub async fn handle_helloworld(
     let _auth_header = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or(AppError::Auth(
-            "Missing or invalid authorization header".to_string(),
+        .ok_or(AppError::Unauthorized(
+            "Missing Authorization header".to_string(),
         ))?;
 
     let pool = state.helloworld_db.clone();
