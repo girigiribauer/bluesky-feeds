@@ -1,5 +1,6 @@
 use crate::helpers::{auth::TestAuth, client::TestClient};
 use axum::http::StatusCode;
+use chrono::Timelike;
 
 /// 観点: Helloworldフィードが正常に取得できるか（認証あり）
 #[tokio::test]
@@ -168,8 +169,17 @@ async fn test_get_feed_skeleton_oneyearago_cleanup_trigger() {
         }
     }
 
-    assert!(
-        success,
-        "フィード取得後にクリーンアップの実行記録が作成されるべき"
-    );
+    let jst_offset = chrono::FixedOffset::east_opt(9 * 3600).unwrap();
+    let now_jst = chrono::Utc::now().with_timezone(&jst_offset);
+    if now_jst.hour() < 4 {
+        assert!(
+            !success,
+            "4時前はクリーンアップがスキップされるため記録は作成されないべき"
+        );
+    } else {
+        assert!(
+            success,
+            "フィード取得後にクリーンアップの実行記録が作成されるべき"
+        );
+    }
 }

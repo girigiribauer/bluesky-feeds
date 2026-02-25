@@ -1,5 +1,6 @@
 use bluesky_feeds::app;
 use bluesky_feeds::state::AppState;
+use jetstream_oxide::events::commit::CommitEvent;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
@@ -156,15 +157,25 @@ async fn main() -> anyhow::Result<()> {
                         let helloworld_pool = state.helloworld_db.clone();
                         let fakebluesky_pool = state.fakebluesky_db.clone();
 
-                        // Process event for helloworld and fakebluesky
-                        let hw_cursor = helloworld::process_event(&helloworld_pool, &event).await;
-                        let fb_cursor = fakebluesky::process_event(&fakebluesky_pool, &event).await;
+                        // 1. イベント自体の time_us を独立して取得
+                        let event_time_us = match &event {
+                            CommitEvent::Create { info, .. } => Some(info.time_us as i64),
+                            CommitEvent::Update { info, .. } => Some(info.time_us as i64),
+                            CommitEvent::Delete { info, .. } => Some(info.time_us as i64),
+                        };
 
-                        // 最新の time_us をカーソルとして保存
-                        let new_cursor = fb_cursor.or(hw_cursor);
-                        if let Some(cursor_us) = new_cursor {
+                        // Process event for helloworld and fakebluesky
+                        let _ = helloworld::process_event(&helloworld_pool, &event).await;
+                        let _ = fakebluesky::process_event(&fakebluesky_pool, &event).await;
+
+                        // 3. 取得した time_us でカーソルを更新 (単調増加を保証)
+                        if let Some(time_us) = event_time_us {
                             let mut current = cursor_ref.lock().await;
-                            *current = Some(cursor_us);
+                            let next_cursor = match *current {
+                                Some(c) => std::cmp::max(c, time_us), // Jetstreamは順序非保証なので巻き戻りを防ぐ
+                                None => time_us,
+                            };
+                            *current = Some(next_cursor);
                             drop(current);
 
                             // DB への書き込み頻度を制限 (5秒に1回)
@@ -178,7 +189,7 @@ async fn main() -> anyhow::Result<()> {
                                     ON CONFLICT(id) DO UPDATE SET cursor_us = MAX(cursor_us, excluded.cursor_us)
                                     "#
                                 )
-                                .bind(cursor_us)
+                                .bind(next_cursor)
                                 .execute(&db)
                                 .await
                                 {
@@ -187,7 +198,7 @@ async fn main() -> anyhow::Result<()> {
                                 *last_write = std::time::Instant::now();
                             }
 
-                            Some(cursor_us)
+                            Some(next_cursor)
                         } else {
                             None
                         }
