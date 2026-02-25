@@ -149,6 +149,12 @@ async fn create_test_state(_bsky_api_url: Option<String>) -> SharedState {
             id INTEGER PRIMARY KEY CHECK (id = 1),
             cursor_us INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS pending_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL,
+            image_urls TEXT NOT NULL
+        );
         "#,
     )
     .execute(&db)

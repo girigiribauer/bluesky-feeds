@@ -197,6 +197,16 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!("Jetstream ingester failed: {}", e);
             }
         });
+
+        // 画像解析のバックグラウンドワーカー起動
+        // pending_posts を定期ポーリングし、画像解析を行って本番テーブルへ移動する
+        let pending_pool = app_state.fakebluesky_db.clone();
+        tokio::spawn(async move {
+            loop {
+                fakebluesky::process_pending(&pending_pool).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
+        });
     } else {
         tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");
     }
