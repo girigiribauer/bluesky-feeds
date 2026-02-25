@@ -423,13 +423,18 @@ mod tests {
         .expect("Failed to create jetstream_cursor table");
     }
 
-    /// カーソルを書き込み、読み出す（本番 main.rs と同じ SQL）
+    /// カーソルを書き込む（本番 main.rs と同じ SQL: MAX で逆行しない）
     async fn save_cursor(pool: &SqlitePool, cursor_us: i64) {
-        sqlx::query("INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)")
-            .bind(cursor_us)
-            .execute(pool)
-            .await
-            .expect("Failed to save cursor");
+        sqlx::query(
+            r#"
+            INSERT INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET cursor_us = MAX(cursor_us, excluded.cursor_us)
+            "#,
+        )
+        .bind(cursor_us)
+        .execute(pool)
+        .await
+        .expect("Failed to save cursor");
     }
 
     async fn load_cursor(pool: &SqlitePool) -> Option<i64> {
@@ -498,15 +503,34 @@ mod tests {
         );
     }
 
+    /// カーソルは逆行してはならない：
+    /// 新しい値が保存された後に古い値を書き込もうとしても、DB の値は変わらない。
+    /// （Jetstream の再接続時に古いタイムスタンプのイベントが来ても安全であることを保証）
+    #[tokio::test]
+    async fn test_cursor_does_not_regress() {
+        let pool = SqlitePool::connect(":memory:")
+            .await
+            .expect("Failed to connect to in-memory SQLite");
+
+        setup_cursor_table(&pool).await;
+
+        let newer: i64 = 1_740_000_000_100_000; // 新しいカーソル
+        let older: i64 = 1_740_000_000_000_000; // 古いカーソル
+
+        // 新しい値を先に保存
+        save_cursor(&pool, newer).await;
+        // 古い値を後から書き込もうとする（Jetstream 再接続時の逆行シミュレーション）
+        save_cursor(&pool, older).await;
+
+        let loaded = load_cursor(&pool).await;
+        assert_eq!(
+            loaded,
+            Some(newer),
+            "古い値を後から書き込んでも、カーソルは逆行してはならない"
+        );
+    }
+
     // ── 2フェーズ処理のテスト ──────────────────────────────────────────────
-    //
-    // 【対象】
-    //   - process_pending_with_checker(): pending_posts の解析・振り分けロジック
-    //   - process_event() のルーティング: 画像の有無で保存先を振り分けるロジック
-    //
-    // 【テスト外のもの】
-    //   - 実際の画像ダウンロードと青空判定（has_blue_sky_images）は HTTP 通信が必要なため
-    //     モック関数 (|_| async { true/false }) を注入してテストする
 
     /// テスト用の DB セットアップ（fake_bluesky_posts + pending_posts）
     async fn setup_fakebluesky_tables(pool: &SqlitePool) {

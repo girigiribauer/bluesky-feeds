@@ -169,10 +169,14 @@ async fn main() -> anyhow::Result<()> {
 
                             // DB への書き込み頻度を制限 (5秒に1回)
                             // 毎イベント書くとバックフィル時に SQLite がボトルネックになるため
+                            // MAX(cursor_us, ?) により、既存値より古い値では上書きされない（逆行防止）
                             let mut last_write = last_write_ref.lock().await;
                             if last_write.elapsed() >= std::time::Duration::from_secs(5) {
                                 if let Err(e) = sqlx::query(
-                                    "INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)"
+                                    r#"
+                                    INSERT INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)
+                                    ON CONFLICT(id) DO UPDATE SET cursor_us = MAX(cursor_us, excluded.cursor_us)
+                                    "#
                                 )
                                 .bind(cursor_us)
                                 .execute(&db)
