@@ -179,24 +179,11 @@ async fn main() -> anyhow::Result<()> {
                             CommitEvent::Delete { info, .. } => Some(info.time_us as i64),
                         };
 
-                        // 2. 先行フィルタリング: 興味のあるイベントのみチャネルへ送る
-                        let mut should_send = false;
-                        if let CommitEvent::Create { commit, .. } = &event {
-                            if let atrium_api::record::KnownRecord::AppBskyFeedPost(post) = &commit.record {
-                                let text = &post.text;
-                                if helloworld::matches_hello_world(text) || fakebluesky::should_process_text(text) {
-                                    should_send = true;
-                                }
-                            }
-                        }
-
-                        if should_send {
-                            // 処理ワーカーへ送信（非同期）
-                            // 書き込みが詰まっている場合はここで待機（背圧）が発生するが、
-                            // フィルタリングにより送信頻度が激減するため、詰まることはほぼなくなる。
-                            if let Err(e) = tx.send(event).await {
-                                tracing::error!("Failed to send event to worker: {}", e);
-                            }
+                        // 2. 処理ワーカーへ送信（非同期）
+                        // 書き込みが詰まっている場合はここで待機（背圧）が発生し、
+                        // 通信速度が適切に抑制される。
+                        if let Err(e) = tx.send(event).await {
+                            tracing::error!("Failed to send event to worker: {}", e);
                         }
 
                         // 3. 取得した time_us でメモリ上のカーソルを更新 (単調増加を保証)

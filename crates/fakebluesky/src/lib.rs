@@ -70,75 +70,76 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
 /// 処理したイベントの `time_us`（マイクロ秒）を返す。
 /// これをカーソルとして保存することで、再接続時のバックフィルに利用できる。
 /// Create イベント以外の場合は `None` を返す。
-/// 高速フィルタリング用の判定関数。
-/// メインループなどでチャネルへ送る前の事前判定に使用する。
-pub fn should_process_text(text: &str) -> bool {
-    // Remove all whitespace
-    let cleaned_text: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-
-    // Regex: (?i)^bluesky[\p{P}\p{S}]*$
-    static BLUESKY_REGEX: OnceLock<Regex> = OnceLock::new();
-    let regex = BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
-
-    regex.is_match(&cleaned_text)
-}
-
-/// 処理したイベントの `time_us`（マイクロ秒）を返す。
-/// これをカーソルとして保存することで、再接続時のバックフィルに利用できる。
-/// Create イベント以外の場合は `None` を返す。
 pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64> {
+    // Only process Create events
     if let CommitEvent::Create { info, commit } = event {
         let time_us = info.time_us as i64;
 
-        if let KnownRecord::AppBskyFeedPost(post) = &commit.record {
-            let collection = commit.info.collection.as_str();
-            if collection != "app.bsky.feed.post" {
-                return Some(time_us);
-            }
-
-            if !should_process_text(&post.text) {
-                return Some(time_us);
-            }
-
-            // Extract post data
-            let did = info.did.as_str();
-            let rkey = commit.info.rkey.as_str();
-            let uri = format!("at://{}/{}/{}", did, collection, rkey);
-            let cid = commit.cid.as_ref().to_string();
-            let indexed_at = time_us / 1_000_000;
-
-            // 画像がない投稿はフィードの対象外 → スキップ
-            // FakeBlueSky フィードは「bluesky と書いて青空でない画像を投稿した」ものだけを対象にする
-            let image_urls = match extract_image_urls(post, did) {
-                Some(urls) if !urls.is_empty() => urls,
-                _ => return Some(time_us), // 画像なし → スキップ（DB に保存しない）
-            };
-
-            // 画像あり → image_urls を JSON 化して pending_posts に保存（HTTP通信なし）
-            // 実際の解析は process_pending() のバックグラウンドタスクで行う
-            let image_urls_json =
-                serde_json::to_string(&image_urls).unwrap_or_else(|_| "[]".to_string());
-            match sqlx::query(
-                "INSERT OR IGNORE INTO pending_posts (uri, cid, indexed_at, image_urls) VALUES (?, ?, ?, ?)",
-            )
-            .bind(&uri)
-            .bind(&cid)
-            .bind(indexed_at)
-            .bind(&image_urls_json)
-            .execute(pool)
-            .await
-            {
-                Ok(result) if result.rows_affected() > 0 => {
-                    tracing::debug!("Queued post for image analysis: {}", uri);
-                }
-                Ok(_) => tracing::debug!("Skipped duplicate pending post: {}", uri),
-                Err(e) => tracing::error!("Failed to queue post: {}", e),
-            }
-
-            Some(time_us)
-        } else {
-            Some(time_us)
+        // Only process posts
+        if commit.info.collection.as_str() != "app.bsky.feed.post" {
+            return Some(time_us);
         }
+
+        // Extract post record
+        let post = match &commit.record {
+            KnownRecord::AppBskyFeedPost(post) => post,
+            _ => return Some(time_us),
+        };
+
+        // Filter by text content
+        // 1. Remove all whitespace
+        // 2. Must start with "bluesky" (case-insensitive)
+        // 3. Can be followed only by punctuation and emojis
+
+        // Remove all whitespace
+        let cleaned_text: String = post.text.chars().filter(|c| !c.is_whitespace()).collect();
+
+        // Regex: (?i)^bluesky[\p{P}\p{S}]*$
+        static BLUESKY_REGEX: OnceLock<Regex> = OnceLock::new();
+        let regex =
+            BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
+
+        if !regex.is_match(&cleaned_text) {
+            return Some(time_us);
+        }
+
+        // Extract post data
+        let did = info.did.as_str();
+        let rkey = commit.info.rkey.as_str();
+        let collection = commit.info.collection.as_str();
+        let uri = format!("at://{}/{}/{}", did, collection, rkey);
+        let cid = commit.cid.as_ref().to_string();
+        let indexed_at = time_us / 1_000_000;
+
+        // 画像がない投稿はフィードの対象外 → スキップ
+        // FakeBlueSky フィードは「bluesky と書いて青空でない画像を投稿した」ものだけを対象にする
+        let image_urls = match extract_image_urls(post, did) {
+            Some(urls) if !urls.is_empty() => urls,
+            _ => return Some(time_us), // 画像なし → スキップ（DB に保存しない）
+        };
+
+        // 画像あり → image_urls を JSON 化して pending_posts に保存（HTTP通信なし）
+        // 実際の解析は process_pending() のバックグラウンドタスクで行う
+        let image_urls_json =
+            serde_json::to_string(&image_urls).unwrap_or_else(|_| "[]".to_string());
+        match sqlx::query(
+            "INSERT OR IGNORE INTO pending_posts (uri, cid, indexed_at, image_urls) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&uri)
+        .bind(&cid)
+        .bind(indexed_at)
+        .bind(&image_urls_json)
+        .execute(pool)
+        .await
+        {
+            Ok(result) if result.rows_affected() > 0 => {
+                tracing::debug!("Queued post for image analysis: {}", uri);
+            }
+            Ok(_) => tracing::debug!("Skipped duplicate pending post: {}", uri),
+            Err(e) => tracing::error!("Failed to queue post: {}", e),
+        }
+
+        Some(time_us)
     } else {
         None
     }
