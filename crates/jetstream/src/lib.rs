@@ -41,14 +41,9 @@ where
             wanted_dids: vec![],
             compression: JetstreamCompression::Zstd,
             cursor: cursor_for_connect,
-            base_delay_ms: 5000, // 外側ループでの遅延は別途管理
-            max_delay_ms: 30000,
-            // 内部リトライを無効化（0）にする。
-            // 理由: jetstream_oxide が内部リトライする際、最初に connect_and_run に渡した
-            //       古いカーソルを使い回してしまうため、途中まで進んだバックフィルが元に戻ってしまう。
-            //       0 にすることで即座に切断エラーとして外側ループに処理を戻し、
-            //       外側ループが最新の cursor_us で新しいコネクションを作り直すようにする。
-            max_retries: 0,
+            base_delay_ms: 5000, // 5秒からスタート
+            max_delay_ms: 30000, // 最大 30 秒（元の設定を戻す）
+            max_retries: 300,    // 合計で約 50 時間リトライを継続
             reset_retries_min_ms: 60000,
         };
 
