@@ -37,6 +37,14 @@ pub async fn connect_database(url: &str) -> anyhow::Result<SqlitePool> {
 
     let pool = SqlitePoolOptions::new().connect_with(options).await?;
 
+    // Enable WAL mode and other performance settings
+    sqlx::query("PRAGMA journal_mode = WAL")
+        .execute(&pool)
+        .await?;
+    sqlx::query("PRAGMA synchronous = NORMAL")
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }
 
