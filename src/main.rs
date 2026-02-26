@@ -137,82 +137,68 @@ async fn main() -> anyhow::Result<()> {
     // Start Jetstream consumer in background
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
+        let state_for_consumer = app_state.clone();
         let cursor_db = app_state.fakebluesky_db.clone();
         // 現在のカーソルを共有するための Arc<Mutex>
         let current_cursor = Arc::new(Mutex::new(initial_cursor));
         // DB 書き込み頻度を制限するためのタイマー
         let last_db_write = Arc::new(Mutex::new(std::time::Instant::now()));
 
-        // 【最適化】受信と処理を分離するためのチャネル
-        // 1024件のバッファを持たせ、1GB VPSのメモリを保護しつつ背圧を制御する
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1024);
-
-        // --- 処理ワーカータスク ---
-        let state_for_worker = app_state.clone();
-        tokio::spawn(async move {
-            let helloworld_pool = state_for_worker.helloworld_db.clone();
-            let fakebluesky_pool = state_for_worker.fakebluesky_db.clone();
-            while let Some(event) = rx.recv().await {
-                // バックグラウンドで順次処理
-                let _ = helloworld::process_event(&helloworld_pool, &event).await;
-                let _ = fakebluesky::process_event(&fakebluesky_pool, &event).await;
-            }
-        });
-
-        // --- 受信コンシューマータスク ---
         tokio::spawn(async move {
             let cursor_for_callback = current_cursor.clone();
             let last_db_write_for_callback = last_db_write.clone();
-            let db = cursor_db.clone();
-
             let result = jetstream::connect_and_run(
                 move |event| {
-                    let tx = tx.clone();
+                    let state = state_for_consumer.clone();
                     let cursor_ref = cursor_for_callback.clone();
                     let last_write_ref = last_db_write_for_callback.clone();
-                    let db_inner = db.clone();
+                    let db = cursor_db.clone();
                     async move {
-                        // 1. イベント自体の time_us を独立して取得 (カーソル更新用)
+                        let helloworld_pool = state.helloworld_db.clone();
+                        let fakebluesky_pool = state.fakebluesky_db.clone();
+
+                        // 1. イベント自体の time_us を独立して取得
                         let event_time_us = match &event {
                             CommitEvent::Create { info, .. } => Some(info.time_us as i64),
                             CommitEvent::Update { info, .. } => Some(info.time_us as i64),
                             CommitEvent::Delete { info, .. } => Some(info.time_us as i64),
                         };
 
-                        // 2. 処理ワーカーへ送信（非同期）
-                        // 書き込みが詰まっている場合はここで待機（背圧）が発生し、
-                        // 通信速度が適切に抑制される。
-                        if let Err(e) = tx.send(event).await {
-                            tracing::error!("Failed to send event to worker: {}", e);
-                        }
+                        // Process event for helloworld and fakebluesky
+                        let _ = helloworld::process_event(&helloworld_pool, &event).await;
+                        let _ = fakebluesky::process_event(&fakebluesky_pool, &event).await;
 
-                        // 3. 取得した time_us でメモリ上のカーソルを更新 (単調増加を保証)
+                        // 3. 取得した time_us でカーソルを更新 (単調増加を保証)
                         if let Some(time_us) = event_time_us {
                             let mut current = cursor_ref.lock().await;
                             let next_cursor = match *current {
-                                Some(c) => std::cmp::max(c, time_us),
+                                Some(c) => std::cmp::max(c, time_us), // Jetstreamは順序非保証なので巻き戻りを防ぐ
                                 None => time_us,
                             };
                             *current = Some(next_cursor);
-                            let current_val = next_cursor;
                             drop(current);
 
-                            // 4. 定期的な DB 保存処理 (5秒間隔)
-                            // 受信ループ内で行うが、5秒に1回なのでオーバーヘッドは極小
+                            // DB への書き込み頻度を制限 (5秒に1回)
+                            // 毎イベント書くとバックフィル時に SQLite がボトルネックになるため
+                            // MAX(cursor_us, ?) により、既存値より古い値では上書きされない（逆行防止）
                             let mut last_write = last_write_ref.lock().await;
                             if last_write.elapsed() >= std::time::Duration::from_secs(5) {
-                                match sqlx::query("INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)")
-                                    .bind(current_val)
-                                    .execute(&db_inner)
-                                    .await
+                                if let Err(e) = sqlx::query(
+                                    r#"
+                                    INSERT INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)
+                                    ON CONFLICT(id) DO UPDATE SET cursor_us = MAX(cursor_us, excluded.cursor_us)
+                                    "#
+                                )
+                                .bind(next_cursor)
+                                .execute(&db)
+                                .await
                                 {
-                                    Ok(_) => tracing::debug!("Saved Jetstream cursor to DB: {}", current_val),
-                                    Err(e) => tracing::error!("Failed to save Jetstream cursor: {}", e),
+                                    tracing::error!("Failed to save Jetstream cursor: {}", e);
                                 }
                                 *last_write = std::time::Instant::now();
                             }
 
-                            Some(current_val)
+                            Some(next_cursor)
                         } else {
                             None
                         }
@@ -223,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
             .await;
 
             if let Err(e) = result {
-                tracing::error!("Jetstream consumer error: {}", e);
+                tracing::error!("Jetstream ingester failed: {}", e);
             }
         });
 
