@@ -410,17 +410,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_removes_expired() {
-        use chrono::TimeZone;
         let store = in_memory_store().await;
 
-        // 実行時の時刻に依存しないよう、確実に4時以降（例：12:00 JST = 3:00 UTC）になる過去の時刻を基準にする
-        let mock_noon = Utc.with_ymd_and_hms(2010, 1, 1, 3, 0, 0).unwrap();
-
-        // 削除されるべきデータ（mock_noonより前）
-        let past = mock_noon - Duration::seconds(1);
-
-        // 残るべきデータ（get_rawは内部でUtc::now()を使うため、現在より未来である必要がある）
-        let future = Utc::now() + Duration::days(1);
+        let past = Utc::now() - Duration::seconds(1);
+        let future = Utc::now() + Duration::hours(1);
 
         store
             .set_raw("expired_key", r#"{"offset":0}"#, past)
@@ -431,15 +424,12 @@ mod tests {
             .await
             .unwrap();
 
-        let deleted = store.cleanup_at(mock_noon).await.unwrap();
+        let deleted = store.cleanup().await.unwrap();
         assert_eq!(deleted, 1, "期限切れの1件だけ削除されるべき");
 
         // 有効なキーはまだ存在する
         let still_there = store.get_raw("valid_key").await.unwrap();
-        assert!(
-            still_there.is_some(),
-            "未来のキーは削除されず残っているべき"
-        );
+        assert!(still_there.is_some());
     }
 
     #[tokio::test]
