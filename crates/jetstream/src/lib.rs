@@ -67,9 +67,8 @@ where
 
         tracing::info!("Jetstream connected. cursor={:?}", cursor_us);
 
-        // ゾンビ接続対策: 一定時間メッセージが届かなければ強制再接続
-        // バックフィル中はサーバーがデータを断続的に送るため、長めに設定する
-        let timeout_duration = Duration::from_secs(300);
+        // ゾンビ接続対策: 60秒以内にメッセージが届かなければ強制再接続
+        let timeout_duration = Duration::from_secs(60);
 
         loop {
             match tokio::time::timeout(timeout_duration, receiver.recv_async()).await {
