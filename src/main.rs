@@ -140,17 +140,13 @@ async fn main() -> anyhow::Result<()> {
         let cursor_db = app_state.fakebluesky_db.clone();
         // 現在のカーソルを共有するための Arc<Mutex>
         let current_cursor = Arc::new(Mutex::new(initial_cursor));
-        // DB 書き込み頻度を制限するためのタイマー
-        let last_db_write = Arc::new(Mutex::new(std::time::Instant::now()));
 
         tokio::spawn(async move {
             let cursor_for_callback = current_cursor.clone();
-            let last_db_write_for_callback = last_db_write.clone();
             let result = jetstream::connect_and_run(
                 move |event| {
                     let state = state_for_consumer.clone();
                     let cursor_ref = cursor_for_callback.clone();
-                    let last_write_ref = last_db_write_for_callback.clone();
                     let db = cursor_db.clone();
                     async move {
                         let helloworld_pool = state.helloworld_db.clone();
@@ -167,20 +163,15 @@ async fn main() -> anyhow::Result<()> {
                             *current = Some(cursor_us);
                             drop(current);
 
-                            // DB への書き込み頻度を制限 (5秒に1回)
-                            // 毎イベント書くとバックフィル時に SQLite がボトルネックになるため
-                            let mut last_write = last_write_ref.lock().await;
-                            if last_write.elapsed() >= std::time::Duration::from_secs(5) {
-                                if let Err(e) = sqlx::query(
-                                    "INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)"
-                                )
-                                .bind(cursor_us)
-                                .execute(&db)
-                                .await
-                                {
-                                    tracing::error!("Failed to save Jetstream cursor: {}", e);
-                                }
-                                *last_write = std::time::Instant::now();
+                            // DB への書き込み（失敗してもパニックしない）
+                            if let Err(e) = sqlx::query(
+                                "INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)"
+                            )
+                            .bind(cursor_us)
+                            .execute(&db)
+                            .await
+                            {
+                                tracing::error!("Failed to save Jetstream cursor: {}", e);
                             }
 
                             Some(cursor_us)
