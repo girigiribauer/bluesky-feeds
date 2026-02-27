@@ -96,7 +96,10 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
         };
 
         // Check if post has blue sky images
+        // 計測: 画像解析（HTTP通信）の所要時間
+        let t_image_start = std::time::Instant::now();
         let has_blue_sky = has_blue_sky_images(&image_urls).await;
+        let t_image = t_image_start.elapsed();
 
         // If any image is blue sky, exclude this post
         if has_blue_sky {
@@ -106,6 +109,8 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
 
         // Store in database
         let indexed_at = chrono::Utc::now().timestamp();
+        // 計測: DB書き込み（ディスクI/O）の所要時間
+        let t_db_start = std::time::Instant::now();
         match sqlx::query(
             r#"
             INSERT OR REPLACE INTO fake_bluesky_posts (uri, cid, indexed_at)
@@ -119,7 +124,13 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
         .await
         {
             Ok(_) => {
-                tracing::info!("Stored fake bluesky post: {}", uri);
+                let t_db = t_db_start.elapsed();
+                tracing::info!(
+                    "MATCH [fakebluesky]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
+                    t_image.as_secs_f64() * 1000.0,
+                    t_db.as_secs_f64() * 1000.0,
+                    uri
+                );
             }
             Err(e) => {
                 tracing::error!("Failed to store post: {}", e);

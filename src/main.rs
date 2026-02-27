@@ -129,8 +129,14 @@ async fn main() -> anyhow::Result<()> {
     if enable_jetstream == "true" {
         let state_for_consumer = app_state.clone();
         tokio::spawn(async move {
+            // 受信レート計測用（ロックフリー。コールバックをまたいで状態を保持するために Arc を使う）
+            let recv_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let last_report = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
+
             let result = jetstream::connect_and_run(move |event| {
                 let state = state_for_consumer.clone();
+                let recv_count = recv_count.clone();
+                let last_report = last_report.clone();
                 async move {
                     let helloworld_pool = state.helloworld_db.clone();
                     let fakebluesky_pool = state.fakebluesky_db.clone();
@@ -140,6 +146,20 @@ async fn main() -> anyhow::Result<()> {
 
                     // Process event for fakebluesky
                     fakebluesky::process_event(&fakebluesky_pool, &event).await;
+
+                    // 受信レートの集計（1分ごとにレポート）
+                    let count = recv_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let mut last = last_report.lock().unwrap();
+                    let elapsed = last.elapsed();
+                    if elapsed >= std::time::Duration::from_secs(60) {
+                        tracing::info!(
+                            "METRICS [1min]: recv={} events, rate={:.1}/s",
+                            count,
+                            count as f64 / elapsed.as_secs_f64()
+                        );
+                        recv_count.store(0, std::sync::atomic::Ordering::Relaxed);
+                        *last = std::time::Instant::now();
+                    }
                 }
             })
             .await;
