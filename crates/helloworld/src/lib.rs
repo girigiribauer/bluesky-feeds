@@ -20,14 +20,12 @@ pub fn matches_hello_world(text: &str) -> bool {
     regex.is_match(text)
 }
 
-pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64> {
+pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
     if let CommitEvent::Create { info, commit } = event {
-        let time_us = info.time_us as i64;
-
         if let KnownRecord::AppBskyFeedPost(post) = &commit.record {
             let collection = commit.info.collection.as_str();
             if collection != "app.bsky.feed.post" {
-                return Some(time_us);
+                return;
             }
 
             let text = &post.text;
@@ -55,10 +53,6 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64
                 }
             }
         }
-
-        Some(time_us)
-    } else {
-        None
     }
 }
 

@@ -51,24 +51,18 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
 }
 
 /// Process Jetstream event
-///
-/// 処理したイベントの `time_us`（マイクロ秒）を返す。
-/// これをカーソルとして保存することで、再接続時のバックフィルに利用できる。
-/// Create イベント以外の場合は `None` を返す。
-pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64> {
+pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
     // Only process Create events
     if let CommitEvent::Create { info, commit } = event {
-        let time_us = info.time_us as i64;
-
         // Only process posts
         if commit.info.collection.as_str() != "app.bsky.feed.post" {
-            return Some(time_us);
+            return;
         }
 
         // Extract post record
         let post = match &commit.record {
             KnownRecord::AppBskyFeedPost(post) => post,
-            _ => return Some(time_us),
+            _ => return,
         };
 
         // Filter by text content
@@ -85,7 +79,7 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64
             BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
 
         if !regex.is_match(&cleaned_text) {
-            return Some(time_us);
+            return;
         }
 
         // Extract post data
@@ -98,7 +92,7 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64
         // If no images, skip
         let image_urls = match extract_image_urls(post, did) {
             Some(urls) if !urls.is_empty() => urls,
-            _ => return Some(time_us),
+            _ => return,
         };
 
         // Check if post has blue sky images
@@ -107,16 +101,14 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64
         // If any image is blue sky, exclude this post
         if has_blue_sky {
             tracing::debug!("Excluding post with blue sky image: {}", uri);
-            return Some(time_us);
+            return;
         }
 
         // Store in database
-        // indexed_at にはイベントの元時刻（time_us）を秒単位に変換して使用する。
-        // バックフィル時も元の投稿順序で表示される。
-        let indexed_at = time_us / 1_000_000;
+        let indexed_at = chrono::Utc::now().timestamp();
         match sqlx::query(
             r#"
-            INSERT OR IGNORE INTO fake_bluesky_posts (uri, cid, indexed_at)
+            INSERT OR REPLACE INTO fake_bluesky_posts (uri, cid, indexed_at)
             VALUES (?, ?, ?)
             "#,
         )
@@ -126,20 +118,13 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) -> Option<i64
         .execute(pool)
         .await
         {
-            Ok(result) if result.rows_affected() > 0 => {
-                tracing::info!("Stored fake bluesky post: {}", uri);
-            }
             Ok(_) => {
-                tracing::debug!("Skipped duplicate post: {}", uri);
+                tracing::info!("Stored fake bluesky post: {}", uri);
             }
             Err(e) => {
                 tracing::error!("Failed to store post: {}", e);
             }
         }
-
-        Some(time_us)
-    } else {
-        None
     }
 }
 
@@ -291,8 +276,6 @@ fn extract_image_urls(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_bluesky_regex() {
         use regex::Regex;
@@ -323,95 +306,5 @@ mod tests {
         assert!(!check("I love bluesky"));
         assert!(!check("bluesky is great"));
         assert!(!check("hello bluesky world"));
-    }
-
-    /// カーソル保存テーブルのヘルパー（本番 main.rs と同じ SQL）
-    async fn setup_cursor_table(pool: &SqlitePool) {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS jetstream_cursor (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                cursor_us INTEGER NOT NULL
-            );
-            "#,
-        )
-        .execute(pool)
-        .await
-        .expect("Failed to create jetstream_cursor table");
-    }
-
-    /// カーソルを書き込み、読み出す（本番 main.rs と同じ SQL）
-    async fn save_cursor(pool: &SqlitePool, cursor_us: i64) {
-        sqlx::query("INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)")
-            .bind(cursor_us)
-            .execute(pool)
-            .await
-            .expect("Failed to save cursor");
-    }
-
-    async fn load_cursor(pool: &SqlitePool) -> Option<i64> {
-        sqlx::query_scalar("SELECT cursor_us FROM jetstream_cursor WHERE id = 1")
-            .fetch_optional(pool)
-            .await
-            .unwrap_or(None)
-    }
-
-    #[tokio::test]
-    async fn test_cursor_save_and_load() {
-        // インメモリ SQLite DB を使う
-        let pool = SqlitePool::connect(":memory:")
-            .await
-            .expect("Failed to connect to in-memory SQLite");
-
-        setup_cursor_table(&pool).await;
-
-        // 初期状態: カーソルは存在しない
-        let cursor = load_cursor(&pool).await;
-        assert!(cursor.is_none(), "カーソルは初期状態では None であるべき");
-
-        // カーソルを書き込む
-        let test_cursor: i64 = 1_740_000_000_000_000; // 代表的な time_us の値
-        save_cursor(&pool, test_cursor).await;
-
-        // 書き込んだ値が正しく読み出せる
-        let loaded = load_cursor(&pool).await;
-        assert_eq!(
-            loaded,
-            Some(test_cursor),
-            "保存したカーソルが正しく読み出せるべき"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_cursor_is_updated_to_latest() {
-        let pool = SqlitePool::connect(":memory:")
-            .await
-            .expect("Failed to connect to in-memory SQLite");
-
-        setup_cursor_table(&pool).await;
-
-        let cursor_1: i64 = 1_740_000_000_000_000;
-        let cursor_2: i64 = 1_740_000_000_100_000; // より新しいカーソル
-
-        save_cursor(&pool, cursor_1).await;
-        save_cursor(&pool, cursor_2).await;
-
-        // 2回書き込んだ場合、最新の値に上書きされているべき
-        let loaded = load_cursor(&pool).await;
-        assert_eq!(
-            loaded,
-            Some(cursor_2),
-            "カーソルは最新の値に更新されているべき"
-        );
-
-        // DB に行は1行だけ存在すること（id = 1 の制約通り）
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM jetstream_cursor")
-            .fetch_one(&pool)
-            .await
-            .expect("Failed to count rows");
-        assert_eq!(
-            count, 1,
-            "jetstream_cursor テーブルには常に1行だけ存在するべき"
-        );
     }
 }
