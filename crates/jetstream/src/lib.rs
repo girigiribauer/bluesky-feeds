@@ -5,7 +5,7 @@ use jetstream_oxide::{
     JetstreamCompression, JetstreamConfig, JetstreamConnector,
 };
 
-const JETSTREAM_URL: &str = "wss://jetstream1.us-east.bsky.network/subscribe";
+const JETSTREAM_URL: &str = "wss://jetstream2.us-west.bsky.network/subscribe";
 
 pub async fn connect_and_run<F, Fut>(callback: F) -> Result<()>
 where
