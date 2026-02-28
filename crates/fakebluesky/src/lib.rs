@@ -51,8 +51,8 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS jetstream_cursor (
-            id     INTEGER PRIMARY KEY CHECK (id = 1),
-            cursor INTEGER NOT NULL
+            id        INTEGER PRIMARY KEY CHECK (id = 1),
+            cursor_us INTEGER NOT NULL
         );
         "#,
     )

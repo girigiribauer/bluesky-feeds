@@ -131,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
     if enable_jetstream == "true" {
         // 起動時に DB からカーソルを読み込む（マイクロ秒 i64）
         let initial_cursor_us: Option<i64> =
-            sqlx::query_scalar("SELECT cursor FROM jetstream_cursor WHERE id = 1")
+            sqlx::query_scalar("SELECT cursor_us FROM jetstream_cursor WHERE id = 1")
                 .fetch_optional(&app_state.fakebluesky_db)
                 .await
                 .unwrap_or(None);
@@ -158,7 +158,7 @@ async fn main() -> anyhow::Result<()> {
                     let cursor = cursor_for_save.load(Ordering::Relaxed);
                     if cursor > 0 {
                         if let Err(e) = sqlx::query(
-                            "INSERT OR REPLACE INTO jetstream_cursor (id, cursor) VALUES (1, ?)",
+                            "INSERT OR REPLACE INTO jetstream_cursor (id, cursor_us) VALUES (1, ?)",
                         )
                         .bind(cursor)
                         .execute(&pool_for_save)
