@@ -1,6 +1,8 @@
 use bluesky_feeds::app;
 use bluesky_feeds::state::AppState;
+use chrono::DateTime;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -127,16 +129,59 @@ async fn main() -> anyhow::Result<()> {
     // Start Jetstream consumer in background
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
+        // 起動時に DB からカーソルを読み込む（マイクロ秒 i64）
+        let initial_cursor_us: Option<i64> =
+            sqlx::query_scalar("SELECT cursor FROM jetstream_cursor WHERE id = 1")
+                .fetch_optional(&app_state.fakebluesky_db)
+                .await
+                .unwrap_or(None);
+        tracing::info!(
+            "Jetstream initial cursor from DB: {:?} us",
+            initial_cursor_us
+        );
+
+        // JetstreamConfig に渡す DateTime<Utc>（マイクロ秒 → DateTime 変換）
+        let initial_cursor_dt = initial_cursor_us.and_then(|us| {
+            DateTime::from_timestamp(us / 1_000_000, ((us % 1_000_000) * 1_000) as u32)
+        });
+
+        // コールバック内でカーソルを更新するための共有 AtomicI64（マイクロ秒）
+        let latest_cursor = Arc::new(AtomicI64::new(initial_cursor_us.unwrap_or(0)));
+
+        // 5秒ごとにカーソルを DB に保存するタスク
+        {
+            let cursor_for_save = latest_cursor.clone();
+            let pool_for_save = app_state.fakebluesky_db.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    let cursor = cursor_for_save.load(Ordering::Relaxed);
+                    if cursor > 0 {
+                        if let Err(e) = sqlx::query(
+                            "INSERT OR REPLACE INTO jetstream_cursor (id, cursor) VALUES (1, ?)",
+                        )
+                        .bind(cursor)
+                        .execute(&pool_for_save)
+                        .await
+                        {
+                            tracing::warn!("Failed to save Jetstream cursor: {}", e);
+                        }
+                    }
+                }
+            });
+        }
+
         let state_for_consumer = app_state.clone();
         tokio::spawn(async move {
             // 受信レート計測用（ロックフリー。コールバックをまたいで状態を保持するために Arc を使う）
             let recv_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let last_report = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
 
-            let result = jetstream::connect_and_run(move |event| {
+            let result = jetstream::connect_and_run(initial_cursor_dt, move |event| {
                 let state = state_for_consumer.clone();
                 let recv_count = recv_count.clone();
                 let last_report = last_report.clone();
+                let latest_cursor = latest_cursor.clone();
                 async move {
                     let helloworld_pool = state.helloworld_db.clone();
                     let fakebluesky_pool = state.fakebluesky_db.clone();
@@ -146,6 +191,15 @@ async fn main() -> anyhow::Result<()> {
 
                     // Process event for fakebluesky
                     fakebluesky::process_event(&fakebluesky_pool, &event).await;
+
+                    // カーソル更新（イベントの time_us をそのまま保持）
+                    use jetstream_oxide::events::commit::CommitEvent;
+                    let time_us = match &event {
+                        CommitEvent::Create { info, .. } => info.time_us,
+                        CommitEvent::Delete { info, .. } => info.time_us,
+                        CommitEvent::Update { info, .. } => info.time_us,
+                    };
+                    latest_cursor.store(time_us as i64, Ordering::Relaxed);
 
                     // 受信レートの集計（1分ごとにレポート）
                     let count = recv_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;

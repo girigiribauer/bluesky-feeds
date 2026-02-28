@@ -1729,6 +1729,7 @@ dependencies = [
  "anyhow",
  "atrium-api",
  "bsky_core",
+ "chrono",
  "jetstream-oxide",
  "tracing",
 ]

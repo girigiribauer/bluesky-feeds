@@ -47,6 +47,19 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await
     .context("Failed to create index")?;
 
+    // Jetstream カーソル永続化テーブル（常に1行のみ）
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS jetstream_cursor (
+            id     INTEGER PRIMARY KEY CHECK (id = 1),
+            cursor INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to create jetstream_cursor table")?;
+
     Ok(())
 }
 
