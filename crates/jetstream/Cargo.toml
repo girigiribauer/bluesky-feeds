@@ -10,3 +10,5 @@ jetstream-oxide = { workspace = true }
 bsky_core = { workspace = true }
 atrium-api = { workspace = true }
 tracing = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }

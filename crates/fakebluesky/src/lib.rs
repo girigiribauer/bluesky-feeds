@@ -60,6 +60,18 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await
     .context("Failed to create jetstream_cursor table")?;
 
+    // マイグレーション: 古い秒単位のデータ（10桁/11桁: < 10000000000）を新しいマイクロ秒単位（16桁）に変換する
+    sqlx::query(
+        r#"
+        UPDATE fake_bluesky_posts
+        SET indexed_at = indexed_at * 1000000
+        WHERE indexed_at < 10000000000;
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to migrate old indexed_at data to microseconds")?;
+
     Ok(())
 }
 
@@ -121,7 +133,8 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
         }
 
         // Store in database
-        let indexed_at = chrono::Utc::now().timestamp();
+        // 修正: ローカルでの受信時刻ではなく、イベントの発生時刻（マイクロ秒）を使ってソートさせる
+        let indexed_at = info.time_us as i64;
         // 計測: DB書き込み（ディスクI/O）の所要時間
         let t_db_start = std::time::Instant::now();
         match sqlx::query(
@@ -330,5 +343,62 @@ mod tests {
         assert!(!check("I love bluesky"));
         assert!(!check("bluesky is great"));
         assert!(!check("hello bluesky world"));
+    }
+
+    #[tokio::test]
+    async fn test_get_feed_skeleton_ordering_and_pagination() {
+        use super::*;
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+
+        // テーブル作成
+        migrate(&pool).await.unwrap();
+
+        // テスト用データ（マイクロ秒単位の indexed_at）を挿入
+        // 時系列順: uri3 (最新) -> uri1 -> uri2 (最古)
+        sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
+            .bind("at://did:example:1/foo/1")
+            .bind("cid1")
+            .bind(1700000000000000_i64) // 中間
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
+            .bind("at://did:example:1/foo/2")
+            .bind("cid2")
+            .bind(1600000000000000_i64) // 最古
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
+            .bind("at://did:example:1/foo/3")
+            .bind("cid3")
+            .bind(1800000000000000_i64) // 最新
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // 1. limit=2 で取得（最新の2件が降順で返るはず）
+        let result1 = get_feed_skeleton(&pool, 2, None).await.unwrap();
+        assert_eq!(result1.feed.len(), 2);
+        assert_eq!(result1.feed[0].post, "at://did:example:1/foo/3"); // 180...
+        assert_eq!(result1.feed[1].post, "at://did:example:1/foo/1"); // 170...
+
+        // カーソルは2件目の indexed_at と同じはず
+        assert_eq!(result1.cursor, Some("1700000000000000".to_string()));
+
+        // 2. カーソルを使って続きを取得（残りの最古の1件が返るはず）
+        let result2 = get_feed_skeleton(&pool, 2, result1.cursor).await.unwrap();
+        assert_eq!(result2.feed.len(), 1);
+        assert_eq!(result2.feed[0].post, "at://did:example:1/foo/2"); // 160...
+
+        // もう続きはないのでカーソルはNoneになるはず
+        assert_eq!(result2.cursor, None);
     }
 }

@@ -1731,6 +1731,8 @@ dependencies = [
  "bsky_core",
  "chrono",
  "jetstream-oxide",
+ "sqlx",
+ "tokio",
  "tracing",
 ]
 
