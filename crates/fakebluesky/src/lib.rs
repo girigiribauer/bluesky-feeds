@@ -133,8 +133,7 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
         }
 
         // Store in database
-        // 修正: ローカルでの受信時刻ではなく、イベントの発生時刻（マイクロ秒）を使ってソートさせる
-        let indexed_at = info.time_us as i64;
+        let indexed_at = post.created_at.as_ref().timestamp_micros();
         // 計測: DB書き込み（ディスクI/O）の所要時間
         let t_db_start = std::time::Instant::now();
         match sqlx::query(
