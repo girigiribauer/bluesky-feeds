@@ -191,6 +191,11 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
             cid TEXT NOT NULL,
             indexed_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS real_bluesky_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS private_list_members (
             user_did TEXT NOT NULL,
             target_did TEXT NOT NULL,
@@ -236,7 +241,7 @@ async fn create_test_state(bsky_api_url: Option<String>) -> SharedState {
         auth_handle: "test.example.com".to_string(),
         auth_password: "dummy".to_string(),
         helloworld_db: db.clone(),
-        fakebluesky_db: db.clone(),
+        realfakebluesky_db: db.clone(),
         privatelist_db: db.clone(),
         oneyearago_db: db,
         umami: bluesky_feeds::analytics::UmamiClient::new(

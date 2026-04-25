@@ -29,7 +29,7 @@ pub struct AppState {
     pub auth_handle: String,
     pub auth_password: String,
     pub helloworld_db: SqlitePool,
-    pub fakebluesky_db: SqlitePool,
+    pub realfakebluesky_db: SqlitePool,
     pub privatelist_db: SqlitePool,
     pub oneyearago_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,

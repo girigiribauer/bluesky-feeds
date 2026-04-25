@@ -5,7 +5,7 @@ members = [
     "crates/helloworld",
     "crates/todoapp",
     "crates/oneyearago",
-    "crates/fakebluesky", "crates/privatelist",
+    "crates/realfakebluesky", "crates/privatelist",
 ]
 resolver = "2"
 
@@ -58,7 +58,7 @@ jetstream = { path = "crates/jetstream" }
 helloworld = { path = "crates/helloworld" }
 todoapp = { path = "crates/todoapp" }
 oneyearago = { path = "crates/oneyearago" }
-fakebluesky = { path = "crates/fakebluesky" }
+realfakebluesky = { path = "crates/realfakebluesky" }
 privatelist = { path = "crates/privatelist" }
 jetstream-oxide = { workspace = true }
 atrium-api = { workspace = true }

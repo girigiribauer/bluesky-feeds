@@ -36,12 +36,15 @@ async fn main() -> anyhow::Result<()> {
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
     helloworld::migrate(&helloworld_db).await?;
 
-    // Initialize Fake Bluesky Database
-    let fakebluesky_db_url = std::env::var("FAKEBLUESKY_DB_URL")
+    // Initialize Real Fake Bluesky Database
+    let realfakebluesky_db_url = std::env::var("REALFAKEBLUESKY_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
-    tracing::info!("Connecting to fakebluesky database: {}", fakebluesky_db_url);
-    let fakebluesky_db = bluesky_feeds::connect_database(&fakebluesky_db_url).await?;
-    fakebluesky::migrate(&fakebluesky_db).await?;
+    tracing::info!(
+        "Connecting to realfakebluesky database: {}",
+        realfakebluesky_db_url
+    );
+    let realfakebluesky_db = bluesky_feeds::connect_database(&realfakebluesky_db_url).await?;
+    realfakebluesky::migrate(&realfakebluesky_db).await?;
 
     // Initialize Private List Database
     let privatelist_db_url = std::env::var("PRIVATELIST_DB_URL")
@@ -106,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
         auth_handle: handle,
         auth_password: password,
         helloworld_db,
-        fakebluesky_db,
+        realfakebluesky_db,
         privatelist_db,
         oneyearago_db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
@@ -129,17 +132,22 @@ async fn main() -> anyhow::Result<()> {
     if enable_jetstream == "true" {
         let state_for_consumer = app_state.clone();
         tokio::spawn(async move {
-            jetstream::start_consumer(state_for_consumer.fakebluesky_db.clone(), move |event| {
-                let state = state_for_consumer.clone();
-                async move {
-                    // Process event for helloworld
-                    helloworld::process_event(&state.helloworld_db, &event).await;
+            tokio::spawn(async move {
+                jetstream::start_consumer(
+                    state_for_consumer.realfakebluesky_db.clone(),
+                    move |event| {
+                        let state = state_for_consumer.clone();
+                        async move {
+                            // Process event for helloworld
+                            helloworld::process_event(&state.helloworld_db, &event).await;
 
-                    // Process event for fakebluesky
-                    fakebluesky::process_event(&state.fakebluesky_db, &event).await;
-                }
-            })
-            .await;
+                            // Process event for realfakebluesky
+                            realfakebluesky::process_event(&state.realfakebluesky_db, &event).await;
+                        }
+                    },
+                )
+                .await;
+            });
         });
     } else {
         tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");

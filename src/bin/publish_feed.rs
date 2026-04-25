@@ -97,6 +97,12 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
         description: "Fake Bluesky feed\n\nBluesky と言いながら実は青空の写真ではないフィード",
         avatar: Some("assets/fakebluesky.png"),
     },
+    FeedServiceConfig {
+        service: "realbluesky",
+        display_name: "Real Bluesky",
+        description: "Real Bluesky feed\n\n正真正銘の青空の写真だけを集めたフィード",
+        avatar: Some("assets/realbluesky.png"),
+    },
 ];
 
 #[tokio::main]

@@ -20,7 +20,7 @@ fn should_reset_cursor(cursor_dt: Option<DateTime<Utc>>, now: DateTime<Utc>) -> 
     }
 }
 
-pub async fn start_consumer<F, Fut>(fakebluesky_db: sqlx::SqlitePool, callback: F)
+pub async fn start_consumer<F, Fut>(realfakebluesky_db: sqlx::SqlitePool, callback: F)
 where
     F: Fn(CommitEvent) -> Fut + Send + Sync + 'static + Clone,
     Fut: std::future::Future<Output = ()> + Send,
@@ -28,7 +28,7 @@ where
     // 起動時に DB からカーソルを読み込む（マイクロ秒 i64）
     let initial_cursor_us: Option<i64> =
         sqlx::query_scalar("SELECT cursor_us FROM jetstream_cursor WHERE id = 1")
-            .fetch_optional(&fakebluesky_db)
+            .fetch_optional(&realfakebluesky_db)
             .await
             .unwrap_or(None);
     tracing::info!(
@@ -44,7 +44,7 @@ where
     // 5秒ごとにカーソルを DB に保存するタスク
     {
         let cursor_for_save = latest_cursor.clone();
-        let pool_for_save = fakebluesky_db.clone();
+        let pool_for_save = realfakebluesky_db.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;

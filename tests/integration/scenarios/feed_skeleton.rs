@@ -100,6 +100,23 @@ async fn test_get_feed_skeleton_fakebluesky_success() {
     assert!(body["feed"].is_array());
 }
 
+/// 観点: RealBlueskyフィードが正常に取得できるか（DB連携確認）
+#[tokio::test]
+async fn test_get_feed_skeleton_realbluesky_success() {
+    let client = TestClient::new().await;
+    let auth = TestAuth::new("did:plc:real");
+
+    let (status, body) = client
+        .get_feed_skeleton(
+            "at://did:example:123/app.bsky.feed.generator/realbluesky",
+            Some(&auth.header_value()),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["feed"].is_array());
+}
+
 /// 観点: TodoAppフィードが認証なしで 401 Unauthorized を返すか
 #[tokio::test]
 async fn test_get_feed_skeleton_todoapp_missing_auth() {

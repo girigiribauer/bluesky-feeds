@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use fakebluesky::image_analyzer::{analyze_image, perform_analysis, BlueDetectionConfig};
+use realfakebluesky::image_analyzer::{analyze_image, perform_analysis, BlueDetectionConfig};
 use std::env;
 use std::path::Path;
 

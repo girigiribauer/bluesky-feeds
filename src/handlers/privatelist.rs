@@ -274,7 +274,7 @@ mod tests {
             auth_handle: "test_handle".to_string(),
             auth_password: "test_password".to_string(),
             helloworld_db: pool.clone(),
-            fakebluesky_db: pool.clone(),
+            realfakebluesky_db: pool.clone(),
             privatelist_db: pool.clone(),
             oneyearago_db: pool,
             umami: UmamiClient::new("http://localhost".to_string(), "site_id".to_string(), None),

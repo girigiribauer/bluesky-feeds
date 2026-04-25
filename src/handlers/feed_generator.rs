@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::handlers::{
-    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_privatelist, handle_todoapp,
-    DidResponse, DidService,
+    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_privatelist,
+    handle_realbluesky, handle_todoapp, DidResponse, DidService,
 };
 use crate::state::{FeedQuery, SharedState};
 use axum::{
@@ -75,6 +75,7 @@ pub async fn get_feed_skeleton(
         FeedService::Todoapp => handle_todoapp(state, headers, params).await,
         FeedService::Oneyearago => handle_oneyearago(state, headers, params).await,
         FeedService::Fakebluesky => handle_fakebluesky(state, params).await,
+        FeedService::Realbluesky => handle_realbluesky(state, params).await,
         FeedService::Privatelist => handle_privatelist(state, headers, params).await,
     }
 }
@@ -102,6 +103,9 @@ pub async fn describe_feed_generator(
         },
         bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/fakebluesky", did),
+        },
+        bsky_core::FeedUri {
+            uri: format!("at://{}/app.bsky.feed.generator/realbluesky", did),
         },
         bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/privatelist", did),

@@ -22,6 +22,13 @@ pub struct FeedItem {
     pub post: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SkyStatus {
+    AllBlue,
+    AllFake,
+    Mixed,
+}
+
 /// Run database migrations
 pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
@@ -45,7 +52,30 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     )
     .execute(pool)
     .await
-    .context("Failed to create index")?;
+    .context("Failed to create fake index")?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS real_bluesky_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to create real_bluesky_posts table")?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_real_bluesky_indexed_at
+        ON real_bluesky_posts(indexed_at DESC);
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to create real index")?;
 
     // Jetstream カーソル永続化テーブル（常に1行のみ）
     sqlx::query(
@@ -123,50 +153,74 @@ pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
         // Check if post has blue sky images
         // 計測: 画像解析（HTTP通信）の所要時間
         let t_image_start = std::time::Instant::now();
-        let has_blue_sky = has_blue_sky_images(&image_urls).await;
+        let sky_status = evaluate_sky_status(&image_urls).await;
         let t_image = t_image_start.elapsed();
 
-        // If any image is blue sky, exclude this post
-        if has_blue_sky {
-            tracing::debug!("Excluding post with blue sky image: {}", uri);
-            return;
-        }
+        let table_name = match sky_status {
+            SkyStatus::AllFake => "fake_bluesky_posts",
+            SkyStatus::AllBlue => "real_bluesky_posts",
+            SkyStatus::Mixed => {
+                tracing::debug!("Excluding post with mixed images: {}", uri);
+                return;
+            }
+        };
 
         // Store in database
         let indexed_at = post.created_at.as_ref().timestamp_micros();
         // 計測: DB書き込み（ディスクI/O）の所要時間
         let t_db_start = std::time::Instant::now();
-        match sqlx::query(
+        let query = format!(
             r#"
-            INSERT OR REPLACE INTO fake_bluesky_posts (uri, cid, indexed_at)
+            INSERT OR REPLACE INTO {} (uri, cid, indexed_at)
             VALUES (?, ?, ?)
             "#,
-        )
-        .bind(&uri)
-        .bind(&cid)
-        .bind(indexed_at)
-        .execute(pool)
-        .await
+            table_name
+        );
+        match sqlx::query(&query)
+            .bind(&uri)
+            .bind(&cid)
+            .bind(indexed_at)
+            .execute(pool)
+            .await
         {
             Ok(_) => {
                 let t_db = t_db_start.elapsed();
                 tracing::info!(
-                    "MATCH [fakebluesky]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
+                    "MATCH [{}]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
+                    table_name.split('_').next().unwrap_or("unknown"),
                     t_image.as_secs_f64() * 1000.0,
                     t_db.as_secs_f64() * 1000.0,
                     uri
                 );
             }
             Err(e) => {
-                tracing::error!("Failed to store post: {}", e);
+                tracing::error!("Failed to store post in {}: {}", table_name, e);
             }
         }
     }
 }
 
-/// Get feed skeleton
-pub async fn get_feed_skeleton(
+/// Get fake feed skeleton
+pub async fn get_fake_feed_skeleton(
     pool: &SqlitePool,
+    limit: usize,
+    cursor: Option<String>,
+) -> Result<FeedSkeleton> {
+    get_skeleton_from_table(pool, "fake_bluesky_posts", limit, cursor).await
+}
+
+/// Get real feed skeleton
+pub async fn get_real_feed_skeleton(
+    pool: &SqlitePool,
+    limit: usize,
+    cursor: Option<String>,
+) -> Result<FeedSkeleton> {
+    get_skeleton_from_table(pool, "real_bluesky_posts", limit, cursor).await
+}
+
+async fn get_skeleton_from_table(
+    pool: &SqlitePool,
+    table: &str,
     limit: usize,
     cursor: Option<String>,
 ) -> Result<FeedSkeleton> {
@@ -176,20 +230,23 @@ pub async fn get_feed_skeleton(
         .and_then(|c| c.parse::<i64>().ok())
         .unwrap_or(i64::MAX);
 
-    let rows = sqlx::query_as::<_, (String, i64)>(
+    let query = format!(
         r#"
         SELECT uri, indexed_at
-        FROM fake_bluesky_posts
+        FROM {}
         WHERE indexed_at < ?
         ORDER BY indexed_at DESC
         LIMIT ?
         "#,
-    )
-    .bind(indexed_at_cursor)
-    .bind(limit as i64 + 1)
-    .fetch_all(pool)
-    .await
-    .context("Failed to fetch posts")?;
+        table
+    );
+
+    let rows = sqlx::query_as::<_, (String, i64)>(&query)
+        .bind(indexed_at_cursor)
+        .bind(limit as i64 + 1)
+        .fetch_all(pool)
+        .await
+        .context(format!("Failed to fetch posts from {}", table))?;
 
     let has_more = rows.len() > limit;
     let posts: Vec<_> = rows.into_iter().take(limit).collect();
@@ -208,15 +265,16 @@ pub async fn get_feed_skeleton(
     Ok(FeedSkeleton { feed, cursor })
 }
 
-/// 投稿内の画像に青空が含まれているかチェック
+/// 投稿内の画像の空の状態を判定
 ///
 /// # Arguments
 /// * `image_urls` - 分析する画像URLのリスト
 ///
 /// # Returns
-/// * `true` - 1枚でも青空画像が含まれている
-/// * `false` - 青空画像が含まれていない、またはエラーが発生した
-async fn has_blue_sky_images(image_urls: &[String]) -> bool {
+/// * `SkyStatus::AllBlue` - 全ての画像が青空
+/// * `SkyStatus::AllFake` - 全ての画像が青空でない
+/// * `SkyStatus::Mixed` - 青空とそうでないものが混在、またはエラー
+async fn evaluate_sky_status(image_urls: &[String]) -> SkyStatus {
     let config = BlueDetectionConfig::default();
     let semaphore = Arc::new(Semaphore::new(2)); // Max 2 concurrent image analyses
 
@@ -235,28 +293,49 @@ async fn has_blue_sky_images(image_urls: &[String]) -> bool {
         tasks.push(task);
     }
 
+    let mut results = Vec::new();
+
     // Wait for all analyses to complete
     for task in tasks {
         match task.await {
             Ok(Ok(is_blue)) => {
-                if is_blue {
-                    return true; // Found blue sky, no need to check other images
-                }
+                results.push(is_blue);
             }
             Ok(Err(e)) => {
                 tracing::debug!("Image analysis failed: {}", e);
-                // On error, conservatively assume it's a blue sky (exclude post)
-                return true;
+                // エラー時は安全のために Mixed 扱い（除外）にする
+                return SkyStatus::Mixed;
             }
             Err(e) => {
                 tracing::error!("Task join error: {}", e);
-                // On error, conservatively assume it's a blue sky (exclude post)
-                return true;
+                return SkyStatus::Mixed;
             }
         }
     }
 
-    false
+    determine_sky_status(&results)
+}
+
+fn determine_sky_status(results: &[bool]) -> SkyStatus {
+    if results.is_empty() {
+        return SkyStatus::Mixed;
+    }
+    let mut has_blue = false;
+    let mut has_fake = false;
+
+    for &is_blue in results {
+        if is_blue {
+            has_blue = true;
+        } else {
+            has_fake = true;
+        }
+    }
+
+    match (has_blue, has_fake) {
+        (true, false) => SkyStatus::AllBlue,
+        (false, true) => SkyStatus::AllFake,
+        _ => SkyStatus::Mixed,
+    }
 }
 
 /// Extract image URLs from post record
@@ -384,7 +463,7 @@ mod tests {
             .unwrap();
 
         // 1. limit=2 で取得（最新の2件が降順で返るはず）
-        let result1 = get_feed_skeleton(&pool, 2, None).await.unwrap();
+        let result1 = get_fake_feed_skeleton(&pool, 2, None).await.unwrap();
         assert_eq!(result1.feed.len(), 2);
         assert_eq!(result1.feed[0].post, "at://did:example:1/foo/3"); // 180...
         assert_eq!(result1.feed[1].post, "at://did:example:1/foo/1"); // 170...
@@ -393,11 +472,57 @@ mod tests {
         assert_eq!(result1.cursor, Some("1700000000000000".to_string()));
 
         // 2. カーソルを使って続きを取得（残りの最古の1件が返るはず）
-        let result2 = get_feed_skeleton(&pool, 2, result1.cursor).await.unwrap();
+        let result2 = get_fake_feed_skeleton(&pool, 2, result1.cursor)
+            .await
+            .unwrap();
         assert_eq!(result2.feed.len(), 1);
         assert_eq!(result2.feed[0].post, "at://did:example:1/foo/2"); // 160...
 
         // もう続きはないのでカーソルはNoneになるはず
         assert_eq!(result2.cursor, None);
+    }
+
+    #[tokio::test]
+    async fn test_get_real_feed_skeleton() {
+        use super::*;
+        use sqlx::sqlite::SqlitePoolOptions;
+
+        let pool = SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        migrate(&pool).await.unwrap();
+
+        sqlx::query("INSERT INTO real_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
+            .bind("at://did:example:1/foo/real1")
+            .bind("cid_real1")
+            .bind(1900000000000000_i64)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let result = get_real_feed_skeleton(&pool, 10, None).await.unwrap();
+        assert_eq!(result.feed.len(), 1);
+        assert_eq!(result.feed[0].post, "at://did:example:1/foo/real1");
+    }
+
+    #[test]
+    fn test_determine_sky_status() {
+        use super::*;
+
+        // 全て青空
+        assert_eq!(determine_sky_status(&[true, true]), SkyStatus::AllBlue);
+        assert_eq!(determine_sky_status(&[true]), SkyStatus::AllBlue);
+
+        // 全て偽物
+        assert_eq!(determine_sky_status(&[false, false]), SkyStatus::AllFake);
+        assert_eq!(determine_sky_status(&[false]), SkyStatus::AllFake);
+
+        // 混在
+        assert_eq!(determine_sky_status(&[true, false]), SkyStatus::Mixed);
+        assert_eq!(determine_sky_status(&[false, true]), SkyStatus::Mixed);
+
+        // 空（通常ありえないが）
+        assert_eq!(determine_sky_status(&[]), SkyStatus::Mixed);
     }
 }

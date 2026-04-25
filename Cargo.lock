@@ -427,7 +427,6 @@ dependencies = [
  "bsky_core",
  "chrono",
  "dotenv",
- "fakebluesky",
  "futures-util",
  "helloworld",
  "image",
@@ -437,6 +436,7 @@ dependencies = [
  "p256",
  "privatelist",
  "rand 0.8.5",
+ "realfakebluesky",
  "reqwest",
  "serde",
  "serde_json",
@@ -992,25 +992,6 @@ dependencies = [
  "rayon-core",
  "smallvec",
  "zune-inflate",
-]
-
-[[package]]
-name = "fakebluesky"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "atrium-api",
- "bsky_core",
- "chrono",
- "image",
- "jetstream-oxide",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2772,6 +2753,25 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "realfakebluesky"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "atrium-api",
+ "bsky_core",
+ "chrono",
+ "image",
+ "jetstream-oxide",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
