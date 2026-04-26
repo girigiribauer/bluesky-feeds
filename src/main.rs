@@ -132,22 +132,20 @@ async fn main() -> anyhow::Result<()> {
     if enable_jetstream == "true" {
         let state_for_consumer = app_state.clone();
         tokio::spawn(async move {
-            tokio::spawn(async move {
-                jetstream::start_consumer(
-                    state_for_consumer.realfakebluesky_db.clone(),
-                    move |event| {
-                        let state = state_for_consumer.clone();
-                        async move {
-                            // Process event for helloworld
-                            helloworld::process_event(&state.helloworld_db, &event).await;
+            jetstream::start_consumer(
+                state_for_consumer.realfakebluesky_db.clone(),
+                move |event| {
+                    let state = state_for_consumer.clone();
+                    async move {
+                        // Process event for helloworld
+                        helloworld::process_event(&state.helloworld_db, &event).await;
 
-                            // Process event for realfakebluesky
-                            realfakebluesky::process_event(&state.realfakebluesky_db, &event).await;
-                        }
-                    },
-                )
-                .await;
-            });
+                        // Process event for realfakebluesky
+                        realfakebluesky::process_event(&state.realfakebluesky_db, &event).await;
+                    }
+                },
+            )
+            .await;
         });
     } else {
         tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");

@@ -412,8 +412,11 @@ mod tests {
     async fn test_cleanup_removes_expired() {
         let store = in_memory_store().await;
 
-        let past = Utc::now() - Duration::seconds(1);
-        let future = Utc::now() + Duration::hours(1);
+        use chrono::TimeZone;
+        let jst_4am_utc = Utc.with_ymd_and_hms(2026, 2, 21, 19, 0, 0).unwrap();
+
+        let past = jst_4am_utc - Duration::seconds(1);
+        let future = jst_4am_utc + Duration::days(365 * 10);
 
         store
             .set_raw("expired_key", r#"{"offset":0}"#, past)
@@ -424,7 +427,8 @@ mod tests {
             .await
             .unwrap();
 
-        let deleted = store.cleanup().await.unwrap();
+        // JST 午前4時以降の固定時刻を指定して実行（UTC 19:00 = JST 04:00）
+        let deleted = store.cleanup_at(jst_4am_utc).await.unwrap();
         assert_eq!(deleted, 1, "期限切れの1件だけ削除されるべき");
 
         // 有効なキーはまだ存在する
