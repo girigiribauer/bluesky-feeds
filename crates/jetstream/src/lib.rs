@@ -8,6 +8,8 @@ use jetstream_oxide::{
 
 const JETSTREAM_URL: &str = "wss://jetstream2.us-west.bsky.network/subscribe";
 const CURSOR_RESET_THRESHOLD_SECS: i64 = 300; // 5分以上古いカーソルは切り捨てる
+const BACKOFF_MIN_SECS: u64 = 5;
+const BACKOFF_MAX_SECS: u64 = 300;
 
 /// 与えられたカーソルの時刻と現在時刻を比較し、
 /// 閾値（CURSOR_RESET_THRESHOLD_SECS）以上古ければ true を返す純粋な判定関数。
@@ -17,6 +19,17 @@ fn should_reset_cursor(cursor_dt: Option<DateTime<Utc>>, now: DateTime<Utc>) -> 
         diff_secs >= CURSOR_RESET_THRESHOLD_SECS
     } else {
         false
+    }
+}
+
+/// 次回の再接続待ち時間を計算する純粋な判定関数。
+/// - セッション中にイベントを受信していた（正常接続）場合は最小値にリセット
+/// - 受信がなかった（即切断など）場合は現在値を2倍にして上限でクランプ
+fn next_backoff(current_secs: u64, had_events: bool) -> u64 {
+    if had_events {
+        BACKOFF_MIN_SECS
+    } else {
+        (current_secs * 2).min(BACKOFF_MAX_SECS)
     }
 }
 
@@ -68,7 +81,16 @@ where
     let recv_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let last_report = std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now()));
 
+    // セッション単位でイベント受信があったかを追跡するフラグ
+    // recv_count はMETRICSで60秒ごとにリセットされるため、バックオフ判定には使えない
+    let session_had_events = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let mut backoff_secs = BACKOFF_MIN_SECS;
+
     loop {
+        // セッション開始時にフラグをリセット
+        session_had_events.store(false, std::sync::atomic::Ordering::Relaxed);
+
         // 再接続のたびに、その時点での最新カーソルを取得
         let current_cursor_us = latest_cursor.load(std::sync::atomic::Ordering::Relaxed);
         let mut cursor_dt = if current_cursor_us > 0 {
@@ -97,12 +119,14 @@ where
         let recv_count_clone = recv_count.clone();
         let last_report_clone = last_report.clone();
         let latest_cursor_clone = latest_cursor.clone();
+        let session_had_events_clone = session_had_events.clone();
 
         let result = connect_and_run(cursor_dt, move |event| {
             let callback = callback_clone.clone();
             let recv_count = recv_count_clone.clone();
             let last_report = last_report_clone.clone();
             let latest_cursor = latest_cursor_clone.clone();
+            let session_had_events = session_had_events_clone.clone();
             async move {
                 // カーソル更新（イベントの time_us をそのまま保持）
                 let time_us = match &event {
@@ -111,6 +135,9 @@ where
                     CommitEvent::Update { info, .. } => info.time_us,
                 };
                 latest_cursor.store(time_us as i64, std::sync::atomic::Ordering::Relaxed);
+
+                // セッション中にイベントを受信したことを記録
+                session_had_events.store(true, std::sync::atomic::Ordering::Relaxed);
 
                 // アプリ側のコールバックを実行
                 callback(event).await;
@@ -132,11 +159,15 @@ where
         })
         .await;
 
+        let had_events = session_had_events.load(std::sync::atomic::Ordering::Relaxed);
+        backoff_secs = next_backoff(backoff_secs, had_events);
+
         tracing::warn!(
-            "Jetstream disconnected: {:?}. Reconnecting in 5 seconds...",
-            result
+            "Jetstream disconnected: {:?}. Reconnecting in {} seconds...",
+            result,
+            backoff_secs
         );
-        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
     }
 }
 
@@ -255,5 +286,31 @@ mod tests {
 
         // 閾値を超えているのでリセットすべき
         assert!(should_reset_cursor(cursor_dt, now));
+    }
+
+    /// 観点3: イベントなしで切断した場合、待ち時間が2倍になること
+    #[test]
+    fn test_next_backoff_doubles_when_no_events() {
+        assert_eq!(next_backoff(5, false), 10);
+        assert_eq!(next_backoff(10, false), 20);
+        assert_eq!(next_backoff(20, false), 40);
+        assert_eq!(next_backoff(40, false), 80);
+        assert_eq!(next_backoff(80, false), 160);
+        assert_eq!(next_backoff(160, false), 300); // 320 → 上限300でクランプ
+    }
+
+    /// 観点4: 上限（300秒）に達したらそれ以上増えないこと
+    #[test]
+    fn test_next_backoff_capped_at_max() {
+        assert_eq!(next_backoff(300, false), 300);
+    }
+
+    /// 観点5: イベントを受信していたセッションの後は最小値（5秒）にリセットされること
+    #[test]
+    fn test_next_backoff_resets_after_successful_session() {
+        // バックオフが上限まで積み上がった状態でも、成功後はリセット
+        assert_eq!(next_backoff(300, true), 5);
+        assert_eq!(next_backoff(160, true), 5);
+        assert_eq!(next_backoff(5, true), 5);
     }
 }
