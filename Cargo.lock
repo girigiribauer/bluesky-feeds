@@ -450,7 +450,6 @@ dependencies = [
  "tower-http 0.5.2",
  "tower-sessions",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
  "urlencoding",
 ]
