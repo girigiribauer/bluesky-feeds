@@ -6,7 +6,6 @@ use jetstream_oxide::{
     JetstreamCompression, JetstreamConfig, JetstreamConnector,
 };
 
-const JETSTREAM_URL: &str = "wss://jetstream2.us-west.bsky.network/subscribe";
 const CURSOR_RESET_THRESHOLD_SECS: i64 = 300; // 5分以上古いカーソルは切り捨てる
 const BACKOFF_MIN_SECS: u64 = 5;
 const BACKOFF_MAX_SECS: u64 = 300;
@@ -176,7 +175,8 @@ where
     F: Fn(CommitEvent) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = ()> + Send,
 {
-    let endpoint_url = std::env::var("JETSTREAM_URL").unwrap_or_else(|_| JETSTREAM_URL.to_string());
+    let endpoint_url =
+        std::env::var("JETSTREAM_URL").expect("JETSTREAM_URL environment variable must be set");
     tracing::info!(
         "Connecting to Jetstream at {} (cursor: {:?})",
         endpoint_url,
