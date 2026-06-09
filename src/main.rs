@@ -9,6 +9,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 async fn main() -> anyhow::Result<()> {
     println!("Starting Rust Bluesky Feed Generator...");
 
+    tracing_log::LogTracer::init().expect("Failed to initialize log tracer");
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),

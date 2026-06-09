@@ -9,6 +9,9 @@ use jetstream_oxide::{
 const CURSOR_RESET_THRESHOLD_SECS: i64 = 300; // 5分以上古いカーソルは切り捨てる
 const BACKOFF_MIN_SECS: u64 = 5;
 const BACKOFF_MAX_SECS: u64 = 300;
+// 短命な接続（ブリップ接続）でバックオフがリセットされないよう、
+// この秒数以上続いたセッションのみ「成功」とみなす
+const SESSION_MIN_SUCCESS_SECS: u64 = 10;
 
 /// 与えられたカーソルの時刻と現在時刻を比較し、
 /// 閾値（CURSOR_RESET_THRESHOLD_SECS）以上古ければ true を返す純粋な判定関数。
@@ -22,14 +25,20 @@ fn should_reset_cursor(cursor_dt: Option<DateTime<Utc>>, now: DateTime<Utc>) -> 
 }
 
 /// 次回の再接続待ち時間を計算する純粋な判定関数。
-/// - セッション中にイベントを受信していた（正常接続）場合は最小値にリセット
-/// - 受信がなかった（即切断など）場合は現在値を2倍にして上限でクランプ
-fn next_backoff(current_secs: u64, had_events: bool) -> u64 {
-    if had_events {
+/// - セッションが成功（イベント受信あり かつ 十分な継続時間）の場合は最小値にリセット
+/// - それ以外（即切断・短命接続など）の場合は現在値を2倍にして上限でクランプ
+fn next_backoff(current_secs: u64, was_successful: bool) -> u64 {
+    if was_successful {
         BACKOFF_MIN_SECS
     } else {
         (current_secs * 2).min(BACKOFF_MAX_SECS)
     }
+}
+
+/// セッションが「成功」とみなせるかを判定する純粋な判定関数。
+/// イベントを受信しており、かつ SESSION_MIN_SUCCESS_SECS 以上継続したセッションを成功とみなす。
+fn was_session_successful(had_events: bool, session_secs: u64) -> bool {
+    had_events && session_secs >= SESSION_MIN_SUCCESS_SECS
 }
 
 pub async fn start_consumer<F, Fut>(realfakebluesky_db: sqlx::SqlitePool, callback: F)
@@ -120,6 +129,7 @@ where
         let latest_cursor_clone = latest_cursor.clone();
         let session_had_events_clone = session_had_events.clone();
 
+        let session_start = std::time::Instant::now();
         let result = connect_and_run(cursor_dt, move |event| {
             let callback = callback_clone.clone();
             let recv_count = recv_count_clone.clone();
@@ -159,7 +169,15 @@ where
         .await;
 
         let had_events = session_had_events.load(std::sync::atomic::Ordering::Relaxed);
-        backoff_secs = next_backoff(backoff_secs, had_events);
+        let session_secs = session_start.elapsed().as_secs();
+        let successful = was_session_successful(had_events, session_secs);
+        tracing::info!(
+            "Session ended: had_events={}, duration={}s, successful={}",
+            had_events,
+            session_secs,
+            successful
+        );
+        backoff_secs = next_backoff(backoff_secs, successful);
 
         tracing::warn!(
             "Jetstream disconnected: {:?}. Reconnecting in {} seconds...",
@@ -305,12 +323,30 @@ mod tests {
         assert_eq!(next_backoff(300, false), 300);
     }
 
-    /// 観点5: イベントを受信していたセッションの後は最小値（5秒）にリセットされること
+    /// 観点5: 成功セッションの後はバックオフが最小値にリセットされること
     #[test]
     fn test_next_backoff_resets_after_successful_session() {
-        // バックオフが上限まで積み上がった状態でも、成功後はリセット
-        assert_eq!(next_backoff(300, true), 5);
-        assert_eq!(next_backoff(160, true), 5);
-        assert_eq!(next_backoff(5, true), 5);
+        assert_eq!(next_backoff(300, true), BACKOFF_MIN_SECS);
+        assert_eq!(next_backoff(160, true), BACKOFF_MIN_SECS);
+        assert_eq!(next_backoff(5, true), BACKOFF_MIN_SECS);
+    }
+
+    /// 観点6: イベントあり かつ 十分な継続時間の場合のみ成功とみなされること
+    #[test]
+    fn test_was_session_successful() {
+        // イベントあり・十分な時間 → 成功
+        assert!(was_session_successful(true, SESSION_MIN_SUCCESS_SECS));
+        assert!(was_session_successful(true, SESSION_MIN_SUCCESS_SECS + 1));
+        assert!(was_session_successful(true, 3600));
+
+        // イベントあり・時間不足（ブリップ接続） → 失敗
+        assert!(!was_session_successful(true, 0));
+        assert!(!was_session_successful(true, 1));
+        assert!(!was_session_successful(true, SESSION_MIN_SUCCESS_SECS - 1));
+
+        // イベントなし → 時間に関わらず失敗
+        assert!(!was_session_successful(false, 0));
+        assert!(!was_session_successful(false, SESSION_MIN_SUCCESS_SECS));
+        assert!(!was_session_successful(false, 3600));
     }
 }
