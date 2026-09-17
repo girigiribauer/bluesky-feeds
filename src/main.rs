@@ -18,7 +18,6 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Log initialized");
 
-    // Authenticate with Bluesky (Service Auth)
     let handle = std::env::var("APP_HANDLE").unwrap_or_default();
     let password = std::env::var("APP_PASSWORD").unwrap_or_default();
 
@@ -28,7 +27,6 @@ async fn main() -> anyhow::Result<()> {
         panic!("APP_PASSWORD is missing");
     }
 
-    // Initialize Database
     let database_url = std::env::var("HELLOWORLD_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/helloworld.db".to_string());
     tracing::info!("Connecting to database: {}", database_url);
@@ -36,7 +34,6 @@ async fn main() -> anyhow::Result<()> {
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
     helloworld::migrate(&helloworld_db).await?;
 
-    // Initialize Real Fake Bluesky Database
     let realfakebluesky_db_url = std::env::var("REALFAKEBLUESKY_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
     tracing::info!(
@@ -46,14 +43,6 @@ async fn main() -> anyhow::Result<()> {
     let realfakebluesky_db = bluesky_feeds::connect_database(&realfakebluesky_db_url).await?;
     realfakebluesky::migrate(&realfakebluesky_db).await?;
 
-    // Initialize Private List Database
-    let privatelist_db_url = std::env::var("PRIVATELIST_DB_URL")
-        .unwrap_or_else(|_| "sqlite:data/privatelist.db".to_string());
-    tracing::info!("Connecting to privatelist database: {}", privatelist_db_url);
-    let privatelist_db = bluesky_feeds::connect_database(&privatelist_db_url).await?;
-    privatelist::migrate(&privatelist_db).await?;
-
-    // Initialize OneYearAgo Database
     let oneyearago_db_url = std::env::var("ONEYEARAGO_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/oneyearago.db".to_string());
     tracing::info!(
@@ -63,13 +52,11 @@ async fn main() -> anyhow::Result<()> {
     let oneyearago_db = bluesky_feeds::connect_database(&oneyearago_db_url).await?;
     oneyearago::cache::migrate(&oneyearago_db).await?;
 
-    // Initialize HTTP Client
     let http_client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
         .build()
         .expect("Failed to build HTTP client");
 
-    // Perform initial authentication
     let (initial_token, initial_did) = if !handle.is_empty() && !password.is_empty() {
         match todoapp::authenticate(&http_client, &handle, &password).await {
             Ok((token, did)) => {
@@ -86,20 +73,7 @@ async fn main() -> anyhow::Result<()> {
         (None, None)
     };
 
-    let privatelist_url =
-        std::env::var("PRIVATELIST_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
-    let bsky_api_url =
-        std::env::var("BSKY_API_URL").unwrap_or_else(|_| "https://api.bsky.app".to_string());
-
-    let config = bluesky_feeds::state::AppConfig {
-        privatelist_url: privatelist_url.clone(),
-        bsky_api_url: bsky_api_url.clone(),
-        client_id: format!("{}/client-metadata.json", privatelist_url),
-        redirect_uri: format!("{}/oauth/callback", privatelist_url),
-    };
-
     let app_state = AppState {
-        config,
         helloworld: helloworld::State::default(),
         http_client,
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
@@ -110,7 +84,6 @@ async fn main() -> anyhow::Result<()> {
         auth_password: password,
         helloworld_db,
         realfakebluesky_db,
-        privatelist_db,
         oneyearago_db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
@@ -120,28 +93,25 @@ async fn main() -> anyhow::Result<()> {
                     .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
             ),
         ),
-        key: axum_extra::extract::cookie::Key::from(
-             &std::env::var("COOKIE_SECRET")
-                .unwrap_or_else(|_| "very-secret-key-that-is-at-least-64-bytes-long-for-security-reasons-please-change-me".to_string())
-                .into_bytes()
-        ),
     };
 
-    // Start Jetstream consumer in background
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
         let state_for_consumer = app_state.clone();
         tokio::spawn(async move {
             jetstream::start_consumer(
                 state_for_consumer.realfakebluesky_db.clone(),
+                jetstream::ConsumerConfig::from_env(),
                 move |event| {
                     let state = state_for_consumer.clone();
                     async move {
-                        // Process event for helloworld
-                        helloworld::process_event(&state.helloworld_db, &event).await;
+                        let jetstream::Event::Post(post) = event else {
+                            return;
+                        };
 
-                        // Process event for realfakebluesky
-                        realfakebluesky::process_event(&state.realfakebluesky_db, &event).await;
+                        helloworld::process_event(&state.helloworld_db, &post).await;
+
+                        realfakebluesky::process_event(&state.realfakebluesky_db, &post).await;
                     }
                 },
             )

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// フィードスケルトンのレスポンス型
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FeedSkeletonResult {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -13,7 +12,6 @@ pub struct FeedItem {
     pub post: String,
 }
 
-/// フィードサービス名の列挙型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedService {
     Helloworld,
@@ -21,7 +19,6 @@ pub enum FeedService {
     Oneyearago,
     Fakebluesky,
     Realbluesky,
-    Privatelist,
 }
 
 impl FeedService {
@@ -33,7 +30,6 @@ impl FeedService {
             "oneyearago" => Some(Self::Oneyearago),
             "fakebluesky" => Some(Self::Fakebluesky),
             "realbluesky" => Some(Self::Realbluesky),
-            "privatelist" => Some(Self::Privatelist),
             _ => None,
         }
     }
@@ -45,7 +41,6 @@ impl FeedService {
             Self::Oneyearago => "oneyearago",
             Self::Fakebluesky => "fakebluesky",
             Self::Realbluesky => "realbluesky",
-            Self::Privatelist => "privatelist",
         }
     }
 }
@@ -112,7 +107,6 @@ pub fn get_user_language(header: Option<&str>) -> Option<String> {
         })
         .collect();
 
-    // Sort by q-value descending
     languages.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     languages.first().map(|(lang, _)| lang.to_string())
@@ -125,17 +119,14 @@ mod tests {
     /// JWTからDIDを抽出できているかを各種検証する
     #[test]
     fn test_extract_did_from_jwt() {
-        // Basic happy path
         let valid_jwt = "Bearer eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJkaWQ6cGxjOmV4YW1wbGUifQ.signature";
         assert_eq!(
             extract_did_from_jwt(Some(valid_jwt)).unwrap(),
             "did:plc:example"
         );
 
-        // Missing header
         assert!(extract_did_from_jwt(None).is_err());
 
-        // Case-insensitive Bearer
         let lowercase_bearer =
             "bearer eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJkaWQ6cGxjOmV4YW1wbGUifQ.signature";
         assert_eq!(
@@ -143,10 +134,8 @@ mod tests {
             "did:plc:example"
         );
 
-        // Invalid format (missing Bearer)
         assert!(extract_did_from_jwt(Some("InvalidToken")).is_err());
 
-        // Invalid JWT (not enought parts)
         assert!(extract_did_from_jwt(Some("Bearer invalid.jwt")).is_err());
     }
 

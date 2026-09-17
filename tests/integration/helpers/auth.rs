@@ -21,13 +21,13 @@ impl TestAuth {
         let payload = json!({
             "iss": self.did,
             "aud": "did:web:feeds.bsky.girigiribauer.com",
-            "exp": 1999999999, // far future
+            "exp": 1999999999,
             "iat": 1700000000
         });
 
         let header_part = general_purpose::URL_SAFE_NO_PAD.encode(header.to_string());
         let payload_part = general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string());
-        let signature_part = "dummy_signature"; // App doesn't verify signature yet
+        let signature_part = "dummy_signature";
 
         format!("{}.{}.{}", header_part, payload_part, signature_part)
     }

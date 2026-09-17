@@ -96,18 +96,15 @@ mod tests {
 
     #[test]
     fn test_is_valid_keyword() {
-        // 正常系: 一般的な区切り文字
         assert!(is_valid_keyword("TODO list", "TODO"), "スペースOK");
         assert!(is_valid_keyword("TODO: list", "TODO"), "コロンOK");
         assert!(is_valid_keyword("TODO", "TODO"), "完全一致OK");
 
-        // 正常系: 大文字小文字の揺れ (Case Insensitive)
         assert!(is_valid_keyword("todo list", "TODO"), "小文字todoはOK");
         assert!(is_valid_keyword("Todo: task", "TODO"), "先頭大文字TodoはOK");
         assert!(is_valid_keyword("done", "DONE"), "小文字doneはOK");
         assert!(is_valid_keyword("DoNe", "DONE"), "大文字小文字混合DoNeはOK");
 
-        // 正常系: 記号・絵文字 (is_alphanumeric() == false なもの)
         assert!(is_valid_keyword("done!", "DONE"), "記号(!)OK");
         assert!(is_valid_keyword("done.", "DONE"), "記号(.)OK");
         assert!(is_valid_keyword("done?", "DONE"), "記号(?)OK");
@@ -115,19 +112,16 @@ mod tests {
         assert!(is_valid_keyword("done👍", "DONE"), "絵文字OK");
         assert!(is_valid_keyword("TODO\nnext", "TODO"), "改行OK");
 
-        // 異常系: 単語の続き (is_alphanumeric() == true なもの)
         assert!(!is_valid_keyword("TODOist", "TODO"), "英字続きNG");
         assert!(!is_valid_keyword("todo123", "TODO"), "数字続きNG");
         assert!(!is_valid_keyword("TODOする", "TODO"), "日本語続きNG");
         assert!(!is_valid_keyword("TODOfeed", "TODO"), "英字続きNG");
 
-        // 異常系: 文中にある
         assert!(
             !is_valid_keyword("I will do TODO", "TODO"),
             "文中のTODOはNG"
         );
 
-        // 異常系: マルチバイト文字 (Panic回避チェック)
         assert!(
             !is_valid_keyword("あいうえお", "TODO"),
             "日本語開始でもPanicしないこと"

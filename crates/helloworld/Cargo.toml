@@ -5,11 +5,8 @@ edition = "2021"
 
 [dependencies]
 bsky_core = { path = "../core" }
-jetstream-oxide = { workspace = true }
-atrium-api = { workspace = true }
-chrono = { workspace = true }
+jetstream = { path = "../jetstream" }
 tracing = { workspace = true }
-ipld-core = "0.4.1"
 sqlx = { workspace = true }
 regex = { workspace = true }
 

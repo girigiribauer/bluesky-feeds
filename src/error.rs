@@ -46,14 +46,12 @@ impl IntoResponse for AppError {
     }
 }
 
-// Anyhow conversion
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
         AppError::Internal(err)
     }
 }
 
-// sqlx::Error conversion (optional helper)
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         AppError::Database(anyhow::Error::from(err))

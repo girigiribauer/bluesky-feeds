@@ -1,44 +1,34 @@
-# Run all checks (format, lint, and all tests)
 test: fmt lint test-all
 
-# Run local dev server (loads .env)
 dev:
 	./scripts/dev.sh
 
-# Run frontend dev server (UI)
-dev-webui:
-	cd webui && npm run dev
-
-# Run all tests (Unit + Integration)
 test-all:
-	cargo test
+	cargo test --workspace
 
-# Run only integration tests
 test-integration:
 	cargo test --test integration
 
-# Run only unit tests (lib)
 test-unit:
 	cargo test --lib
 
 check:
-	cargo check
+	cargo check --workspace
 
 fmt:
 	cargo fmt
 
 lint:
-	cargo clippy
+	cargo clippy --workspace
 
-# Publish/Unpublish specific feeds
-# Usage: make publish FEED=helloworld
+live-check:
+	cargo run -p jetstream --example live_check
+
 publish:
 	cargo run --bin publish_feed $(FEED)
 
 unpublish:
 	cargo run --bin unpublish_feed $(FEED)
 
-# Check Fake Bluesky image
-# Usage: make check-image IMAGE=path/to/image.jpg
 check-image:
 	cargo run --bin check_image $(IMAGE)

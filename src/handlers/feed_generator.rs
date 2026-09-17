@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::handlers::{
-    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_privatelist,
-    handle_realbluesky, handle_todoapp, DidResponse, DidService,
+    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_realbluesky, handle_todoapp,
+    DidResponse, DidService,
 };
 use crate::state::{FeedQuery, SharedState};
 use axum::{
@@ -22,7 +22,6 @@ pub async fn get_feed_skeleton(
         params.limit
     );
 
-    // Analytics
     let requester_did = match headers.get("authorization").and_then(|h| h.to_str().ok()) {
         Some(header) => match bsky_core::extract_did_from_jwt(Some(header)) {
             Ok(did) => did,
@@ -50,7 +49,6 @@ pub async fn get_feed_skeleton(
         .next_back()
         .ok_or(AppError::BadRequest("Invalid feed URI".to_string()))?;
 
-    // Construct URL with query parameters for easier filtering in Umami
     let feed_path = format!("/feeds/{}?did={}", feed_name, requester_did);
 
     let event_data = serde_json::json!({
@@ -63,7 +61,7 @@ pub async fn get_feed_skeleton(
         feed_path,
         None,
         Some(requester_did.clone()),
-        Some(language.clone()), // Clone language as it's used above
+        Some(language.clone()),
         Some(event_data),
     );
 
@@ -76,7 +74,6 @@ pub async fn get_feed_skeleton(
         FeedService::Oneyearago => handle_oneyearago(state, headers, params).await,
         FeedService::Fakebluesky => handle_fakebluesky(state, params).await,
         FeedService::Realbluesky => handle_realbluesky(state, params).await,
-        FeedService::Privatelist => handle_privatelist(state, headers, params).await,
     }
 }
 
@@ -88,7 +85,7 @@ pub async fn describe_feed_generator(
         let did = auth.did.clone().ok_or(AppError::Internal(anyhow::anyhow!(
             "Service not authenticated yet"
         )))?;
-        (did.clone(), did) // logic::service_did
+        (did.clone(), did)
     };
 
     let feeds = vec![
@@ -106,9 +103,6 @@ pub async fn describe_feed_generator(
         },
         bsky_core::FeedUri {
             uri: format!("at://{}/app.bsky.feed.generator/realbluesky", did),
-        },
-        bsky_core::FeedUri {
-            uri: format!("at://{}/app.bsky.feed.generator/privatelist", did),
         },
     ];
 

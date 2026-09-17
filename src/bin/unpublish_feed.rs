@@ -25,14 +25,12 @@ struct DeleteRecordRequest {
     rkey: String,
 }
 
-// Ported from packages/shared/src/index.ts (only needed for validation if STRICT, but simple arg check is enough)
 const AVAILABLE_SERVICES: &[&str] = &["helloworld", "todoapp", "oneyearago"];
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
 
-    // Check args
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: unpublish_feed <feed_service_id>");

@@ -14,7 +14,6 @@ pub async fn handle_todoapp(
             "Missing or invalid authorization header".to_string(),
         ))?;
 
-    // Read client and current token
     let (client, current_token) = {
         let auth = state.service_auth.read().await;
         (state.http_client.clone(), auth.token.clone())
@@ -24,19 +23,16 @@ pub async fn handle_todoapp(
         "Service not authenticated"
     )))?;
 
-    // First attempt
     match todoapp::get_feed_skeleton(&client, auth_header, &token).await {
         Ok(res) => Ok(Json(res)),
         Err(e) => {
             let err_msg = format!("{:?}", e);
-            // Check if error is due to expired token (401 or specific message)
             if err_msg.contains("ExpiredToken")
                 || err_msg.contains("401")
                 || err_msg.contains("Unauthorized")
             {
                 tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
-                // RE-AUTHENTICATION LOGIC
                 let handle = &state.auth_handle;
                 let password = &state.auth_password;
 
@@ -44,14 +40,12 @@ pub async fn handle_todoapp(
                     match todoapp::authenticate(&client, handle, password).await {
                         Ok((new_token, new_did)) => {
                             tracing::info!("Token refresh successful (DID: {})", new_did);
-                            // Update state with new token
                             {
                                 let mut auth = state.service_auth.write().await;
                                 auth.token = Some(new_token.clone());
                                 auth.did = Some(new_did);
                             }
 
-                            // Retry request with new token
                             match todoapp::get_feed_skeleton(&client, auth_header, &new_token).await
                             {
                                 Ok(res) => Ok(Json(res)),
@@ -78,7 +72,6 @@ pub async fn handle_todoapp(
                     ))
                 }
             } else {
-                // Other error
                 tracing::error!("Todoapp error: {:#}", e);
                 Err(AppError::Internal(e))
             }

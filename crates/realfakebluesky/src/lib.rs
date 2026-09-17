@@ -1,9 +1,8 @@
 pub mod image_analyzer;
 
 use anyhow::{Context, Result};
-use atrium_api::record::KnownRecord;
 use image_analyzer::{is_blue_sky_image, BlueDetectionConfig};
-use jetstream_oxide::events::commit::CommitEvent;
+use jetstream::PostEvent;
 use regex::Regex;
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -29,7 +28,6 @@ pub enum SkyStatus {
     Mixed,
 }
 
-/// Run database migrations
 pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
         r#"
@@ -77,7 +75,6 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await
     .context("Failed to create real index")?;
 
-    // Jetstream カーソル永続化テーブル（常に1行のみ）
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS jetstream_cursor (
@@ -90,7 +87,6 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .await
     .context("Failed to create jetstream_cursor table")?;
 
-    // マイグレーション: 古い秒単位のデータ（10桁/11桁: < 10000000000）を新しいマイクロ秒単位（16桁）に変換する
     sqlx::query(
         r#"
         UPDATE fake_bluesky_posts
@@ -105,102 +101,84 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-/// Process Jetstream event
-pub async fn process_event(pool: &SqlitePool, event: &CommitEvent) {
-    // Only process Create events
-    if let CommitEvent::Create { info, commit } = event {
-        // Only process posts
-        if commit.info.collection.as_str() != "app.bsky.feed.post" {
-            return;
+fn images_to_inspect(post: &PostEvent) -> Option<Vec<String>> {
+    let cleaned_text: String = post
+        .record
+        .text
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    static BLUESKY_REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
+
+    if !regex.is_match(&cleaned_text) {
+        return None;
+    }
+
+    match extract_image_urls(post.record.embed.as_ref(), &post.did) {
+        Some(urls) if !urls.is_empty() => Some(urls),
+        _ => None,
+    }
+}
+
+pub async fn process_event(pool: &SqlitePool, post: &PostEvent) {
+    let Some(image_urls) = images_to_inspect(post) else {
+        return;
+    };
+
+    let uri = post.uri();
+
+    let t_image_start = std::time::Instant::now();
+    let sky_status = evaluate_sky_status(&image_urls).await;
+    let t_image = t_image_start.elapsed();
+
+    let Some((table_name, indexed_at)) = stored_row(post, sky_status) else {
+        tracing::debug!("Excluding post with mixed images: {}", uri);
+        return;
+    };
+
+    let t_db_start = std::time::Instant::now();
+    let query = format!(
+        r#"
+        INSERT OR REPLACE INTO {} (uri, cid, indexed_at)
+        VALUES (?, ?, ?)
+        "#,
+        table_name
+    );
+    match sqlx::query(&query)
+        .bind(&uri)
+        .bind(&post.cid)
+        .bind(indexed_at)
+        .execute(pool)
+        .await
+    {
+        Ok(_) => {
+            let t_db = t_db_start.elapsed();
+            tracing::info!(
+                "MATCH [{}]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
+                table_name.split('_').next().unwrap_or("unknown"),
+                t_image.as_secs_f64() * 1000.0,
+                t_db.as_secs_f64() * 1000.0,
+                uri
+            );
         }
-
-        // Extract post record
-        let post = match &commit.record {
-            KnownRecord::AppBskyFeedPost(post) => post,
-            _ => return,
-        };
-
-        // Filter by text content
-        // 1. Remove all whitespace
-        // 2. Must start with "bluesky" (case-insensitive)
-        // 3. Can be followed only by punctuation and emojis
-
-        // Remove all whitespace
-        let cleaned_text: String = post.text.chars().filter(|c| !c.is_whitespace()).collect();
-
-        // Regex: (?i)^bluesky[\p{P}\p{S}]*$
-        static BLUESKY_REGEX: OnceLock<Regex> = OnceLock::new();
-        let regex =
-            BLUESKY_REGEX.get_or_init(|| Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap());
-
-        if !regex.is_match(&cleaned_text) {
-            return;
-        }
-
-        // Extract post data
-        let did = info.did.as_str();
-        let rkey = commit.info.rkey.as_str();
-        let collection = commit.info.collection.as_str();
-        let uri = format!("at://{}/{}/{}", did, collection, rkey);
-        let cid = commit.cid.as_ref().to_string();
-
-        // If no images, skip
-        let image_urls = match extract_image_urls(post, did) {
-            Some(urls) if !urls.is_empty() => urls,
-            _ => return,
-        };
-
-        // Check if post has blue sky images
-        // 計測: 画像解析（HTTP通信）の所要時間
-        let t_image_start = std::time::Instant::now();
-        let sky_status = evaluate_sky_status(&image_urls).await;
-        let t_image = t_image_start.elapsed();
-
-        let table_name = match sky_status {
-            SkyStatus::AllFake => "fake_bluesky_posts",
-            SkyStatus::AllBlue => "real_bluesky_posts",
-            SkyStatus::Mixed => {
-                tracing::debug!("Excluding post with mixed images: {}", uri);
-                return;
-            }
-        };
-
-        // Store in database
-        let indexed_at = post.created_at.as_ref().timestamp_micros();
-        // 計測: DB書き込み（ディスクI/O）の所要時間
-        let t_db_start = std::time::Instant::now();
-        let query = format!(
-            r#"
-            INSERT OR REPLACE INTO {} (uri, cid, indexed_at)
-            VALUES (?, ?, ?)
-            "#,
-            table_name
-        );
-        match sqlx::query(&query)
-            .bind(&uri)
-            .bind(&cid)
-            .bind(indexed_at)
-            .execute(pool)
-            .await
-        {
-            Ok(_) => {
-                let t_db = t_db_start.elapsed();
-                tracing::info!(
-                    "MATCH [{}]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
-                    table_name.split('_').next().unwrap_or("unknown"),
-                    t_image.as_secs_f64() * 1000.0,
-                    t_db.as_secs_f64() * 1000.0,
-                    uri
-                );
-            }
-            Err(e) => {
-                tracing::error!("Failed to store post in {}: {}", table_name, e);
-            }
+        Err(e) => {
+            tracing::error!("Failed to store post in {}: {}", table_name, e);
         }
     }
 }
 
-/// Get fake feed skeleton
+fn stored_row(post: &PostEvent, sky_status: SkyStatus) -> Option<(&'static str, i64)> {
+    let table_name = match sky_status {
+        SkyStatus::AllFake => "fake_bluesky_posts",
+        SkyStatus::AllBlue => "real_bluesky_posts",
+        SkyStatus::Mixed => return None,
+    };
+
+    Some((table_name, post.indexed_at_us()))
+}
+
 pub async fn get_fake_feed_skeleton(
     pool: &SqlitePool,
     limit: usize,
@@ -209,7 +187,6 @@ pub async fn get_fake_feed_skeleton(
     get_skeleton_from_table(pool, "fake_bluesky_posts", limit, cursor).await
 }
 
-/// Get real feed skeleton
 pub async fn get_real_feed_skeleton(
     pool: &SqlitePool,
     limit: usize,
@@ -265,18 +242,9 @@ async fn get_skeleton_from_table(
     Ok(FeedSkeleton { feed, cursor })
 }
 
-/// 投稿内の画像の空の状態を判定
-///
-/// # Arguments
-/// * `image_urls` - 分析する画像URLのリスト
-///
-/// # Returns
-/// * `SkyStatus::AllBlue` - 全ての画像が青空
-/// * `SkyStatus::AllFake` - 全ての画像が青空でない
-/// * `SkyStatus::Mixed` - 青空とそうでないものが混在、またはエラー
 async fn evaluate_sky_status(image_urls: &[String]) -> SkyStatus {
     let config = BlueDetectionConfig::default();
-    let semaphore = Arc::new(Semaphore::new(2)); // Max 2 concurrent image analyses
+    let semaphore = Arc::new(Semaphore::new(2));
 
     let mut tasks = Vec::new();
     for url in image_urls {
@@ -295,7 +263,6 @@ async fn evaluate_sky_status(image_urls: &[String]) -> SkyStatus {
 
     let mut results = Vec::new();
 
-    // Wait for all analyses to complete
     for task in tasks {
         match task.await {
             Ok(Ok(is_blue)) => {
@@ -303,7 +270,6 @@ async fn evaluate_sky_status(image_urls: &[String]) -> SkyStatus {
             }
             Ok(Err(e)) => {
                 tracing::debug!("Image analysis failed: {}", e);
-                // エラー時は安全のために Mixed 扱い（除外）にする
                 return SkyStatus::Mixed;
             }
             Err(e) => {
@@ -338,39 +304,27 @@ fn determine_sky_status(results: &[bool]) -> SkyStatus {
     }
 }
 
-/// Extract image URLs from post record
 fn extract_image_urls(
-    post: &atrium_api::app::bsky::feed::post::Record,
+    embed: Option<&atrium_api::types::Union<atrium_api::app::bsky::feed::post::RecordEmbedRefs>>,
     did: &str,
 ) -> Option<Vec<String>> {
     use atrium_api::types::{BlobRef, TypedBlobRef, Union};
 
-    let embed = post.embed.as_ref()?;
+    let embed = embed?;
 
-    // Try to extract images from embed
     match embed {
         Union::Refs(
             atrium_api::app::bsky::feed::post::RecordEmbedRefs::AppBskyEmbedImagesMain(images),
         ) => {
-            // Extract CIDs from blob refs and construct CDN URLs
             let urls: Vec<String> = images
                 .images
                 .iter()
                 .map(|img| {
-                    // BlobRef is an enum with Typed and Untyped variants
                     let cid = match &img.image {
-                        BlobRef::Typed(TypedBlobRef::Blob(blob)) => {
-                            // Typed blob has r#ref field with CidLink
-                            // CidLink is a tuple struct wrapping Cid, access via .0
-                            blob.r#ref.0.to_string()
-                        }
-                        BlobRef::Untyped(untyped) => {
-                            // Untyped blob has cid field as String
-                            untyped.cid.clone()
-                        }
+                        BlobRef::Typed(TypedBlobRef::Blob(blob)) => blob.r#ref.0.to_string(),
+                        BlobRef::Untyped(untyped) => untyped.cid.clone(),
                     };
 
-                    // Construct CDN URL
                     format!(
                         "https://cdn.bsky.app/img/feed_fullsize/plain/{}/{}@jpeg",
                         did, cid
@@ -391,36 +345,37 @@ fn extract_image_urls(
 
 #[cfg(test)]
 mod tests {
+    /// 本文が bluesky 単独（記号・絵文字の付加は可）のときだけ対象にすること
     #[test]
     fn test_bluesky_regex() {
-        use regex::Regex;
-        let regex = Regex::new(r"(?i)^bluesky[\p{P}\p{S}]*$").unwrap();
+        use super::*;
 
-        // Helper to simulate whitespace removal
-        let check = |text: &str| -> bool {
-            let cleaned: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-            regex.is_match(&cleaned)
+        let matches = |text: &str| -> bool {
+            images_to_inspect(&post_event(
+                text,
+                "2026-01-01T00:00:00.000Z",
+                Some(images_embed()),
+            ))
+            .is_some()
         };
 
-        // Should match
-        assert!(check("bluesky"));
-        assert!(check("Bluesky"));
-        assert!(check("BLUESKY"));
-        assert!(check("blue sky")); // Becomes "bluesky"
-        assert!(check("Blue \n Sky")); // Becomes "BlueSky"
-        assert!(check("bluesky!"));
-        assert!(check("  bluesky  ")); // Becomes "bluesky"
-        assert!(check("bluesky✨"));
-        assert!(check("bluesky!!!!"));
-        assert!(check("bluesky🤗"));
-        assert!(check("bluesky..."));
+        assert!(matches("bluesky"));
+        assert!(matches("Bluesky"));
+        assert!(matches("BLUESKY"));
+        assert!(matches("blue sky"));
+        assert!(matches("Blue \n Sky"));
+        assert!(matches("bluesky!"));
+        assert!(matches("  bluesky  "));
+        assert!(matches("bluesky✨"));
+        assert!(matches("bluesky!!!!"));
+        assert!(matches("bluesky🤗"));
+        assert!(matches("bluesky..."));
 
-        // Should NOT match
-        assert!(!check("blue-sky")); // Hyphen remains -> "blue-sky" (no match)
-        assert!(!check("blue.sky")); // Dot remains -> "blue.sky" (no match)
-        assert!(!check("I love bluesky"));
-        assert!(!check("bluesky is great"));
-        assert!(!check("hello bluesky world"));
+        assert!(!matches("blue-sky"));
+        assert!(!matches("blue.sky"));
+        assert!(!matches("I love bluesky"));
+        assert!(!matches("bluesky is great"));
+        assert!(!matches("hello bluesky world"));
     }
 
     #[tokio::test]
@@ -433,15 +388,12 @@ mod tests {
             .await
             .unwrap();
 
-        // テーブル作成
         migrate(&pool).await.unwrap();
 
-        // テスト用データ（マイクロ秒単位の indexed_at）を挿入
-        // 時系列順: uri3 (最新) -> uri1 -> uri2 (最古)
         sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
             .bind("at://did:example:1/foo/1")
             .bind("cid1")
-            .bind(1700000000000000_i64) // 中間
+            .bind(1700000000000000_i64)
             .execute(&pool)
             .await
             .unwrap();
@@ -449,7 +401,7 @@ mod tests {
         sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
             .bind("at://did:example:1/foo/2")
             .bind("cid2")
-            .bind(1600000000000000_i64) // 最古
+            .bind(1600000000000000_i64)
             .execute(&pool)
             .await
             .unwrap();
@@ -457,28 +409,24 @@ mod tests {
         sqlx::query("INSERT INTO fake_bluesky_posts (uri, cid, indexed_at) VALUES (?, ?, ?)")
             .bind("at://did:example:1/foo/3")
             .bind("cid3")
-            .bind(1800000000000000_i64) // 最新
+            .bind(1800000000000000_i64)
             .execute(&pool)
             .await
             .unwrap();
 
-        // 1. limit=2 で取得（最新の2件が降順で返るはず）
         let result1 = get_fake_feed_skeleton(&pool, 2, None).await.unwrap();
         assert_eq!(result1.feed.len(), 2);
-        assert_eq!(result1.feed[0].post, "at://did:example:1/foo/3"); // 180...
-        assert_eq!(result1.feed[1].post, "at://did:example:1/foo/1"); // 170...
+        assert_eq!(result1.feed[0].post, "at://did:example:1/foo/3");
+        assert_eq!(result1.feed[1].post, "at://did:example:1/foo/1");
 
-        // カーソルは2件目の indexed_at と同じはず
         assert_eq!(result1.cursor, Some("1700000000000000".to_string()));
 
-        // 2. カーソルを使って続きを取得（残りの最古の1件が返るはず）
         let result2 = get_fake_feed_skeleton(&pool, 2, result1.cursor)
             .await
             .unwrap();
         assert_eq!(result2.feed.len(), 1);
-        assert_eq!(result2.feed[0].post, "at://did:example:1/foo/2"); // 160...
+        assert_eq!(result2.feed[0].post, "at://did:example:1/foo/2");
 
-        // もう続きはないのでカーソルはNoneになるはず
         assert_eq!(result2.cursor, None);
     }
 
@@ -506,23 +454,256 @@ mod tests {
         assert_eq!(result.feed[0].post, "at://did:example:1/foo/real1");
     }
 
+    const DID: &str = "did:plc:z72i7hdynmk6r22z27h6tvur";
+    const CID: &str = "bafyreibvjvcv745gig4mvqs4hctx4zfkono4rjejm2ta6gtyzkqxfjeily";
+    const IMAGE_CID: &str = "bafkreib7o2gowpvz2qh6ytvgdpkvcbfzowvvrqvgl3cztrmjvhmtxyfwfa";
+    const RKEY: &str = "3l3temxelsm2a";
+    const TIME_US: i64 = 1_700_000_000_000_000;
+
+    fn post_event(
+        text: &str,
+        created_at: &str,
+        embed: Option<serde_json::Value>,
+    ) -> jetstream::PostEvent {
+        let mut record = serde_json::json!({
+            "$type": "app.bsky.feed.post",
+            "text": text,
+            "createdAt": created_at,
+        });
+        if let Some(embed) = embed {
+            record["embed"] = embed;
+        }
+        let json = serde_json::json!({
+            "did": DID,
+            "time_us": TIME_US,
+            "kind": "commit",
+            "commit": {
+                "operation": "create",
+                "rev": RKEY,
+                "rkey": RKEY,
+                "collection": "app.bsky.feed.post",
+                "cid": CID,
+                "record": record,
+            },
+        })
+        .to_string();
+        let mut skips = jetstream::SkipStats::default();
+        match jetstream::event::parse_event(&json, &mut skips) {
+            Ok(Some(jetstream::Event::Post(post))) => *post,
+            other => panic!("投稿として読めなかった: {}", other.is_ok()),
+        }
+    }
+
+    fn images_embed() -> serde_json::Value {
+        serde_json::json!({
+            "$type": "app.bsky.embed.images",
+            "images": [{
+                "alt": "",
+                "image": {
+                    "$type": "blob",
+                    "ref": { "$link": IMAGE_CID },
+                    "mimeType": "image/jpeg",
+                    "size": 1000,
+                },
+            }],
+        })
+    }
+
+    async fn migrated_pool() -> sqlx::SqlitePool {
+        use super::*;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        migrate(&pool).await.unwrap();
+        pool
+    }
+
+    async fn stored_count(pool: &sqlx::SqlitePool) -> i64 {
+        let fake: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fake_bluesky_posts")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let real: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM real_bluesky_posts")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        fake + real
+    }
+
+    /// 本文が bluesky にマッチしない投稿は、画像を取りに行かないこと
+    #[test]
+    fn test_images_to_inspect_skips_non_matching_post() {
+        use super::*;
+
+        assert_eq!(
+            images_to_inspect(&post_event(
+                "I love bluesky",
+                "2026-01-01T00:00:00.000Z",
+                Some(images_embed())
+            )),
+            None
+        );
+    }
+
+    /// 添付画像がない投稿は、画像の判定に進まないこと
+    #[test]
+    fn test_images_to_inspect_skips_post_without_images() {
+        use super::*;
+
+        assert_eq!(
+            images_to_inspect(&post_event("bluesky", "2026-01-01T00:00:00.000Z", None)),
+            None
+        );
+        assert_eq!(
+            images_to_inspect(&post_event(
+                "bluesky",
+                "2026-01-01T00:00:00.000Z",
+                Some(serde_json::json!({ "$type": "app.bsky.embed.images", "images": [] }))
+            )),
+            None
+        );
+    }
+
+    /// 本文がマッチし画像もある投稿は、CDN の URL が判定対象になること
+    #[test]
+    fn test_images_to_inspect_returns_cdn_urls() {
+        use super::*;
+
+        assert_eq!(
+            images_to_inspect(&post_event(
+                "bluesky!",
+                "2026-01-01T00:00:00.000Z",
+                Some(images_embed())
+            )),
+            Some(vec![format!(
+                "https://cdn.bsky.app/img/feed_fullsize/plain/{DID}/{IMAGE_CID}@jpeg"
+            )])
+        );
+    }
+
+    /// 空白を挟んだ本文（Blue Sky）も、空白を除いてから判定されること
+    #[test]
+    fn test_images_to_inspect_removes_whitespace_before_matching() {
+        use super::*;
+
+        assert!(images_to_inspect(&post_event(
+            "Blue Sky",
+            "2026-01-01T00:00:00.000Z",
+            Some(images_embed())
+        ))
+        .is_some());
+    }
+
+    /// 対象外の投稿では、何も保存されないこと
+    #[tokio::test]
+    async fn test_process_event_stores_nothing_for_skipped_post() {
+        use super::*;
+        let pool = migrated_pool().await;
+
+        process_event(
+            &pool,
+            &post_event("bluesky", "2026-01-01T00:00:00.000Z", None),
+        )
+        .await;
+        process_event(
+            &pool,
+            &post_event(
+                "I love bluesky",
+                "2026-01-01T00:00:00.000Z",
+                Some(images_embed()),
+            ),
+        )
+        .await;
+
+        assert_eq!(stored_count(&pool).await, 0);
+    }
+
+    /// 画像の判定結果から、書き込み先のテーブルと並び順の値が決まること
+    #[test]
+    fn test_stored_row_decides_table_and_indexed_at() {
+        use super::*;
+        let post = post_event("bluesky", "2023-11-14T22:13:19.000Z", Some(images_embed()));
+
+        assert_eq!(
+            stored_row(&post, SkyStatus::AllFake),
+            Some(("fake_bluesky_posts", 1_699_999_999_000_000))
+        );
+        assert_eq!(
+            stored_row(&post, SkyStatus::AllBlue),
+            Some(("real_bluesky_posts", 1_699_999_999_000_000))
+        );
+        assert_eq!(stored_row(&post, SkyStatus::Mixed), None);
+    }
+
+    /// 投稿日時が読めない・未来のときは、受信時刻を並び順に使うこと
+    #[test]
+    fn test_stored_row_falls_back_to_received_time() {
+        use super::*;
+        let broken = post_event("bluesky", "", Some(images_embed()));
+        let future = post_event("bluesky", "2099-01-01T00:00:00.000Z", Some(images_embed()));
+
+        assert_eq!(
+            stored_row(&broken, SkyStatus::AllBlue),
+            Some(("real_bluesky_posts", TIME_US))
+        );
+        assert_eq!(
+            stored_row(&future, SkyStatus::AllBlue),
+            Some(("real_bluesky_posts", TIME_US))
+        );
+    }
+
+    /// images の添付から CDN の URL を組み立てること
+    #[test]
+    fn test_extract_image_urls_builds_cdn_urls() {
+        use super::*;
+        let post = post_event("bluesky", "2026-01-01T00:00:00.000Z", Some(images_embed()));
+
+        assert_eq!(
+            extract_image_urls(post.record.embed.as_ref(), &post.did),
+            Some(vec![format!(
+                "https://cdn.bsky.app/img/feed_fullsize/plain/{DID}/{IMAGE_CID}@jpeg"
+            )])
+        );
+    }
+
+    /// images 以外の添付と、添付なしでは URL を返さないこと
+    #[test]
+    fn test_extract_image_urls_ignores_other_embeds() {
+        use super::*;
+        let external = post_event(
+            "bluesky",
+            "2026-01-01T00:00:00.000Z",
+            Some(serde_json::json!({
+                "$type": "app.bsky.embed.external",
+                "external": { "uri": "https://example.com", "title": "t", "description": "d" },
+            })),
+        );
+        let none = post_event("bluesky", "2026-01-01T00:00:00.000Z", None);
+
+        assert_eq!(
+            extract_image_urls(external.record.embed.as_ref(), &external.did),
+            None
+        );
+        assert_eq!(
+            extract_image_urls(none.record.embed.as_ref(), &none.did),
+            None
+        );
+    }
+
     #[test]
     fn test_determine_sky_status() {
         use super::*;
 
-        // 全て青空
         assert_eq!(determine_sky_status(&[true, true]), SkyStatus::AllBlue);
         assert_eq!(determine_sky_status(&[true]), SkyStatus::AllBlue);
 
-        // 全て偽物
         assert_eq!(determine_sky_status(&[false, false]), SkyStatus::AllFake);
         assert_eq!(determine_sky_status(&[false]), SkyStatus::AllFake);
 
-        // 混在
         assert_eq!(determine_sky_status(&[true, false]), SkyStatus::Mixed);
         assert_eq!(determine_sky_status(&[false, true]), SkyStatus::Mixed);
 
-        // 空（通常ありえないが）
         assert_eq!(determine_sky_status(&[]), SkyStatus::Mixed);
     }
 }

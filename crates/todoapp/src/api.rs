@@ -36,9 +36,8 @@ pub async fn search_posts(
     author_did: &str,
     service_token: &str,
 ) -> Result<Vec<PostView>> {
-    // Authenticated API request using Service Token
     let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
-    let query_param = q.to_string(); // q parameter
+    let query_param = q.to_string();
 
     let res = client
         .get(url)

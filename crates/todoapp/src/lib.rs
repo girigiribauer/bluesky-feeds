@@ -16,7 +16,6 @@ pub async fn get_feed_skeleton(
     let did = bsky_core::extract_did_from_jwt(Some(user_jwt))
         .context("Failed to extract DID from auth")?;
 
-    // TODOとDONEを並列で取得して、後で紐づける
     let (todos_res, dones_res) = tokio::join!(
         api::search_posts(client, "TODO", &did, service_token),
         api::search_posts(client, "DONE", &did, service_token)
@@ -28,7 +27,7 @@ pub async fn get_feed_skeleton(
     let feed_items = logic::filter_todos(todos, dones);
 
     Ok(FeedSkeletonResult {
-        cursor: None, // TODOフィードなので1ページ完結
+        cursor: None,
         feed: feed_items,
     })
 }

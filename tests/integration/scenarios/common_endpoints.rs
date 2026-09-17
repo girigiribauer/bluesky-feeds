@@ -1,7 +1,7 @@
 use crate::helpers::client::TestClient;
 use axum::http::StatusCode;
 
-/// 観点: /health エンドポイントが 200 OK を返すか
+/// /health エンドポイントが 200 OK を返すか
 #[tokio::test]
 async fn test_health_check() {
     let client = TestClient::new().await;
@@ -11,7 +11,7 @@ async fn test_health_check() {
     assert_eq!(body, "OK");
 }
 
-/// 観点: /.well-known/did.json が正しい構造とIDを返すか
+/// /.well-known/did.json が正しい構造とIDを返すか
 #[tokio::test]
 async fn test_did_json_response() {
     let client = TestClient::new().await;

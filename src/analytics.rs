@@ -34,7 +34,6 @@ impl UmamiClient {
         if !host.starts_with("http://") && !host.starts_with("https://") {
             host = format!("https://{}", host);
         }
-        // Remove trailing slash if present
         if host.ends_with('/') {
             host.pop();
         }
@@ -75,7 +74,6 @@ impl UmamiClient {
             match client
                 .post(&endpoint)
                 .json(&payload)
-                // Umami に弾かれないようにするためにUser-Agentを偽装する
                 .header(
                     "User-Agent",
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

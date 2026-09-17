@@ -21,11 +21,9 @@ async fn main() -> Result<()> {
 }
 
 async fn print_analysis(target: &str, config: &BlueDetectionConfig) -> Result<()> {
-    // Check if target is URL
     let result = if target.starts_with("http://") || target.starts_with("https://") {
         analyze_image(target, config).await?
     } else {
-        // Assume local file
         let path = Path::new(target);
         if !path.exists() {
             eprintln!("File not found: {}", target);

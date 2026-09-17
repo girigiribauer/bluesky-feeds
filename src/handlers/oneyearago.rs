@@ -15,11 +15,9 @@ pub async fn handle_oneyearago(
             "Missing or invalid authorization header".to_string(),
         ))?;
 
-    // Extract DID from JWT
     let did = bsky_core::extract_did_from_jwt(Some(auth_header))
         .map_err(|_| AppError::Auth("Invalid JWT".to_string()))?;
 
-    // Read client and current token
     let (client, current_token) = {
         let auth = state.service_auth.read().await;
         (state.http_client.clone(), auth.token.clone())
@@ -52,7 +50,6 @@ pub async fn handle_oneyearago(
             {
                 tracing::warn!("Token expired, attempting refresh... ({})", err_msg);
 
-                // RE-AUTHENTICATION LOGIC
                 let handle = &state.auth_handle;
                 let password = &state.auth_password;
 
@@ -60,14 +57,12 @@ pub async fn handle_oneyearago(
                     match todoapp::authenticate(&client, handle, password).await {
                         Ok((new_token, new_did)) => {
                             tracing::info!("Token refresh successful (DID: {})", new_did);
-                            // Update state with new token
                             {
                                 let mut auth = state.service_auth.write().await;
                                 auth.token = Some(new_token.clone());
                                 auth.did = Some(new_did);
                             }
 
-                            // Retry request with new token
                             match oneyearago::get_feed_skeleton(
                                 &client,
                                 auth_header,
@@ -109,7 +104,6 @@ pub async fn handle_oneyearago(
         }
     };
 
-    // 正常終了した場合のみ、非同期でクリーンアップを実行する
     if results.is_ok() {
         let store_for_cleanup = CacheStore::new(state.oneyearago_db.clone());
         tokio::spawn(async move {
