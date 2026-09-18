@@ -16,6 +16,7 @@ const BACKOFF_MIN_SECS: u64 = 5;
 const BACKOFF_MAX_SECS: u64 = 300;
 const SESSION_MIN_SUCCESS_EVENTS: u64 = 100;
 const SESSION_MIN_SUCCESS_SECS: u64 = 10;
+const ETA_MIN_LAG_SECS: f64 = 60.0;
 
 #[derive(Debug, Clone)]
 pub struct ConsumerConfig {
@@ -89,7 +90,7 @@ fn lag_secs(last_time_us: Option<i64>, now_us: i64) -> f64 {
 
 fn eta_secs(lag_secs: f64, catch_up_rate: Option<f64>) -> Option<f64> {
     match catch_up_rate {
-        Some(rate) if rate > 1.0 && lag_secs > 0.0 => Some(lag_secs / (rate - 1.0)),
+        Some(rate) if rate > 1.0 && lag_secs >= ETA_MIN_LAG_SECS => Some(lag_secs / (rate - 1.0)),
         _ => None,
     }
 }
@@ -405,13 +406,15 @@ mod tests {
         assert_eq!(catch_up_rate(0, 10, Duration::ZERO), None);
     }
 
-    /// 追いついているときだけ、完了見込みを出すこと
+    /// 遅れが十分大きく、かつ追いついているときだけ、完了見込みを出すこと
     #[test]
     fn test_eta_is_only_known_while_catching_up() {
         assert_eq!(eta_secs(100.0, Some(11.0)), Some(10.0));
         assert_eq!(eta_secs(100.0, Some(1.0)), None);
         assert_eq!(eta_secs(100.0, None), None);
         assert_eq!(eta_secs(0.0, Some(10.0)), None);
+        assert_eq!(eta_secs(0.1, Some(1.000001)), None);
+        assert_eq!(eta_secs(59.9, Some(2.0)), None);
     }
 
     /// 遅れが「今の時刻 − 最後に処理したイベントの時刻」になること
