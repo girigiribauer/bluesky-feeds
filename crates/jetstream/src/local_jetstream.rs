@@ -17,35 +17,37 @@ pub enum Script {
     Ping,
     Sleep(Duration),
     Close(u16, String),
+    Drop,
 }
 
 pub struct LocalJetstream {
     port: u16,
-    requested_uri: Arc<Mutex<Option<String>>>,
+    requested_uris: Arc<Mutex<Vec<String>>>,
     pongs: Arc<AtomicU64>,
     shutdown: Option<oneshot::Sender<()>>,
 }
 
 impl LocalJetstream {
     pub async fn start(script: Vec<Script>) -> Self {
+        Self::start_sessions(vec![script]).await
+    }
+
+    pub async fn start_sessions(sessions: Vec<Vec<Script>>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let requested_uri = Arc::new(Mutex::new(None));
+        let requested_uris = Arc::new(Mutex::new(Vec::new()));
         let pongs = Arc::new(AtomicU64::new(0));
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
-        let uri_slot = requested_uri.clone();
+        let uri_log = requested_uris.clone();
         let pong_counter = pongs.clone();
         tokio::spawn(async move {
             let serving = async {
+                let mut accepted = 0;
                 while let Ok((stream, _)) = listener.accept().await {
-                    serve(
-                        stream,
-                        script.clone(),
-                        uri_slot.clone(),
-                        pong_counter.clone(),
-                    )
-                    .await;
+                    let script = sessions[accepted.min(sessions.len() - 1)].clone();
+                    accepted += 1;
+                    serve(stream, script, uri_log.clone(), pong_counter.clone()).await;
                 }
             };
             tokio::select! {
@@ -56,7 +58,7 @@ impl LocalJetstream {
 
         LocalJetstream {
             port,
-            requested_uri,
+            requested_uris,
             pongs,
             shutdown: Some(shutdown_tx),
         }
@@ -67,7 +69,11 @@ impl LocalJetstream {
     }
 
     pub fn requested_uri(&self) -> Option<String> {
-        self.requested_uri.lock().unwrap().clone()
+        self.requested_uris.lock().unwrap().last().cloned()
+    }
+
+    pub fn requested_uris(&self) -> Vec<String> {
+        self.requested_uris.lock().unwrap().clone()
     }
 
     pub fn pongs(&self) -> u64 {
@@ -86,11 +92,11 @@ impl Drop for LocalJetstream {
 async fn serve(
     stream: TcpStream,
     script: Vec<Script>,
-    uri_slot: Arc<Mutex<Option<String>>>,
+    uri_log: Arc<Mutex<Vec<String>>>,
     pongs: Arc<AtomicU64>,
 ) {
     let callback = |request: &Request, response: Response| {
-        *uri_slot.lock().unwrap() = Some(request.uri().to_string());
+        uri_log.lock().unwrap().push(request.uri().to_string());
         Ok(response)
     };
 
@@ -111,6 +117,7 @@ async fn serve(
                 code: CloseCode::from(code),
                 reason: reason.into(),
             })),
+            Script::Drop => return,
         };
         if socket.send(message).await.is_err() {
             return;

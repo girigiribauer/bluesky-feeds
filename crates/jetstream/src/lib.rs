@@ -12,8 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
-const BACKOFF_MIN_SECS: u64 = 5;
-const BACKOFF_MAX_SECS: u64 = 300;
+const BACKOFF_MAX: Duration = Duration::from_secs(300);
 const SESSION_MIN_SUCCESS_EVENTS: u64 = 100;
 const SESSION_MIN_SUCCESS_SECS: u64 = 10;
 const ETA_MIN_LAG_SECS: f64 = 60.0;
@@ -27,6 +26,7 @@ pub struct ConsumerConfig {
     pub replay_buffer_us: i64,
     pub cursor_save_interval: Duration,
     pub metrics_interval: Duration,
+    pub backoff_min: Duration,
 }
 
 impl Default for ConsumerConfig {
@@ -39,6 +39,7 @@ impl Default for ConsumerConfig {
             replay_buffer_us: 1_000_000,
             cursor_save_interval: Duration::from_secs(5),
             metrics_interval: Duration::from_secs(60),
+            backoff_min: Duration::from_secs(5),
         }
     }
 }
@@ -53,11 +54,11 @@ impl ConsumerConfig {
     }
 }
 
-fn next_backoff(current_secs: u64, was_successful: bool) -> u64 {
+fn next_backoff(current: Duration, was_successful: bool, min: Duration) -> Duration {
     if was_successful {
-        BACKOFF_MIN_SECS
+        min
     } else {
-        (current_secs * 2).min(BACKOFF_MAX_SECS)
+        (current * 2).min(BACKOFF_MAX)
     }
 }
 
@@ -202,7 +203,7 @@ pub async fn start_consumer<F, Fut>(
 
     let counters = Arc::new(SkipCounters::default());
     let mut metrics = Metrics::new(config.metrics_interval);
-    let mut backoff_secs = BACKOFF_MIN_SECS;
+    let mut backoff = config.backoff_min;
 
     loop {
         let cursor_us = reconnect_cursor_us(
@@ -235,7 +236,7 @@ pub async fn start_consumer<F, Fut>(
             Ok(outcome) => outcome,
             Err(e) => {
                 tracing::error!("Jetstream reader task failed: {}", e);
-                tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+                tokio::time::sleep(backoff).await;
                 continue;
             }
         };
@@ -243,7 +244,7 @@ pub async fn start_consumer<F, Fut>(
 
         let session_secs = session_start.elapsed().as_secs();
         let successful = was_session_successful(processed, session_secs);
-        backoff_secs = next_backoff(backoff_secs, successful);
+        backoff = next_backoff(backoff, successful, config.backoff_min);
 
         tracing::warn!(
             "Jetstream disconnected: {:?}. processed={}, duration={}s, successful={}, blocked={}ms, skips={:?}. Reconnecting in {} seconds...",
@@ -253,9 +254,9 @@ pub async fn start_consumer<F, Fut>(
             successful,
             outcome.send_blocked_ms,
             outcome.skips,
-            backoff_secs
+            backoff.as_secs()
         );
-        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+        tokio::time::sleep(backoff).await;
     }
 }
 
@@ -321,29 +322,42 @@ mod tests {
             idle_timeout: Duration::from_millis(300),
             cursor_save_interval: Duration::from_millis(20),
             metrics_interval: Duration::from_millis(50),
+            backoff_min: Duration::from_millis(10),
             ..ConsumerConfig::default()
         }
+    }
+
+    fn secs(n: u64) -> Duration {
+        Duration::from_secs(n)
+    }
+
+    #[test]
+    fn test_default_backoff_min_is_five_seconds() {
+        assert_eq!(ConsumerConfig::default().backoff_min, secs(5));
     }
 
     /// 失敗した接続のあとは、待ち時間が2倍になること
     #[test]
     fn test_next_backoff_doubles_when_session_failed() {
-        assert_eq!(next_backoff(5, false), 10);
-        assert_eq!(next_backoff(10, false), 20);
-        assert_eq!(next_backoff(160, false), 300);
+        let min = ConsumerConfig::default().backoff_min;
+        assert_eq!(next_backoff(secs(5), false, min), secs(10));
+        assert_eq!(next_backoff(secs(10), false, min), secs(20));
+        assert_eq!(next_backoff(secs(160), false, min), secs(300));
     }
 
     /// 待ち時間が上限（300秒）を超えないこと
     #[test]
     fn test_next_backoff_capped_at_max() {
-        assert_eq!(next_backoff(300, false), 300);
+        let min = ConsumerConfig::default().backoff_min;
+        assert_eq!(next_backoff(secs(300), false, min), secs(300));
     }
 
     /// 成功した接続のあとは、待ち時間が最小に戻ること
     #[test]
     fn test_next_backoff_resets_after_successful_session() {
-        assert_eq!(next_backoff(300, true), BACKOFF_MIN_SECS);
-        assert_eq!(next_backoff(5, true), BACKOFF_MIN_SECS);
+        let min = ConsumerConfig::default().backoff_min;
+        assert_eq!(next_backoff(secs(300), true, min), min);
+        assert_eq!(next_backoff(secs(5), true, min), min);
     }
 
     /// 短くてもたくさん処理した接続は、成功とみなすこと
@@ -588,5 +602,78 @@ mod tests {
 
         let requested = server.requested_uri().expect("接続要求が記録されていない");
         assert!(requested.contains("cursor=1699999999000000"), "{requested}");
+    }
+
+    #[tokio::test]
+    async fn test_start_consumer_resumes_from_last_event_after_connection_drop() {
+        let server = LocalJetstream::start_sessions(vec![
+            vec![
+                Script::Text(post_json("first", 1_700_000_000_000_000)),
+                Script::Text(post_json("second", 1_700_000_000_000_500)),
+                Script::Drop,
+            ],
+            vec![
+                Script::Text(post_json("third", 1_700_000_000_001_000)),
+                Script::Text(post_json("fourth", 1_700_000_000_001_500)),
+                Script::Sleep(Duration::from_secs(5)),
+            ],
+        ])
+        .await;
+        let pool = cursor_pool(None).await;
+
+        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received_for_callback = received.clone();
+        let consumer = tokio::spawn(start_consumer(
+            pool.clone(),
+            test_config(server.url()),
+            move |event| {
+                let received = received_for_callback.clone();
+                async move {
+                    if let Event::Post(post) = event {
+                        received.lock().unwrap().push(post.record.text.clone());
+                    }
+                }
+            },
+        ));
+
+        for _ in 0..100 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if received.lock().unwrap().len() >= 4 {
+                break;
+            }
+        }
+        consumer.abort();
+
+        assert_eq!(
+            *received.lock().unwrap(),
+            vec!["first", "second", "third", "fourth"]
+        );
+        let requested = server.requested_uris();
+        assert_eq!(requested.len(), 2, "{requested:?}");
+        assert!(!requested[0].contains("cursor="), "{}", requested[0]);
+        assert!(
+            requested[1].contains("cursor=1699999999000500"),
+            "{}",
+            requested[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_start_consumer_keeps_old_cursor_instead_of_jumping_to_live() {
+        let an_hour_ago_us = chrono::Utc::now().timestamp_micros() - 3_600_000_000;
+        let server = LocalJetstream::start(vec![Script::Sleep(Duration::from_secs(5))]).await;
+        let pool = cursor_pool(Some(an_hour_ago_us)).await;
+
+        let consumer = tokio::spawn(start_consumer(
+            pool.clone(),
+            test_config(server.url()),
+            |_event| async {},
+        ));
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        consumer.abort();
+
+        let requested = server.requested_uri().expect("接続要求が記録されていない");
+        let expected = format!("cursor={}", an_hour_ago_us - 1_000_000);
+        assert!(requested.contains(&expected), "{requested}");
     }
 }

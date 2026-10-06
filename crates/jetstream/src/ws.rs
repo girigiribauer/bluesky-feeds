@@ -307,6 +307,26 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_session_reports_connection_dropped_without_close() {
+        let server = LocalJetstream::start(vec![
+            Script::Text(post_json("before drop", 1_700_000_000_000_000)),
+            Script::Drop,
+        ])
+        .await;
+
+        let (tx, mut rx) = mpsc::channel(16);
+        let counters = Arc::new(SkipCounters::default());
+        let outcome = run_session(server.url(), tx, Duration::from_secs(5), counters).await;
+
+        assert!(
+            matches!(outcome.end, SessionEnd::WebSocketError(_)),
+            "{:?}",
+            outcome.end
+        );
+        assert_eq!(drain(&mut rx).await, vec!["before drop"]);
+    }
+
     /// 無通信が続いたときに切り、その理由が残ること
     #[tokio::test]
     async fn test_session_reports_idle_timeout() {
