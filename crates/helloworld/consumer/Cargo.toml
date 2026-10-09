@@ -1,17 +1,14 @@
 [package]
-name = "helloworld"
+name = "helloworld-consumer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bsky_core = { path = "../core" }
-jetstream = { path = "../jetstream" }
+jetstream = { path = "../../jetstream" }
 tracing = { workspace = true }
 sqlx = { workspace = true }
 regex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-chrono = { workspace = true }
-cid = { workspace = true }
 serde_json = { workspace = true }

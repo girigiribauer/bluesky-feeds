@@ -147,7 +147,6 @@ async fn create_test_state() -> SharedState {
     .unwrap();
 
     AppState {
-        helloworld: helloworld::State::default(),
         http_client: reqwest::Client::new(),
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
             token: Some("mock_service_token_for_testing".to_string()),

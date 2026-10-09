@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to database: {}", database_url);
 
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
-    helloworld::migrate(&helloworld_db).await?;
+    helloworld_consumer::migrate(&helloworld_db).await?;
 
     let realfakebluesky_db_url = std::env::var("REALFAKEBLUESKY_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         realfakebluesky_db_url
     );
     let realfakebluesky_db = bluesky_feeds::connect_database(&realfakebluesky_db_url).await?;
-    realfakebluesky::migrate(&realfakebluesky_db).await?;
+    realfakebluesky_consumer::migrate(&realfakebluesky_db).await?;
 
     let oneyearago_db_url = std::env::var("ONEYEARAGO_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/oneyearago.db".to_string());
@@ -74,7 +74,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app_state = AppState {
-        helloworld: helloworld::State::default(),
         http_client,
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
             token: initial_token,
@@ -109,9 +108,10 @@ async fn main() -> anyhow::Result<()> {
                             return;
                         };
 
-                        helloworld::process_event(&state.helloworld_db, &post).await;
+                        helloworld_consumer::process_event(&state.helloworld_db, &post).await;
 
-                        realfakebluesky::process_event(&state.realfakebluesky_db, &post).await;
+                        realfakebluesky_consumer::process_event(&state.realfakebluesky_db, &post)
+                            .await;
                     }
                 },
             )

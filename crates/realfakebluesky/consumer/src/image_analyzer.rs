@@ -38,7 +38,10 @@ pub struct AnalysisResult {
     pub blue_pixels: u32,
 }
 
-pub async fn is_blue_sky_image(image_url: &str, config: &BlueDetectionConfig) -> Result<bool> {
+pub(crate) async fn is_blue_sky_image(
+    image_url: &str,
+    config: &BlueDetectionConfig,
+) -> Result<bool> {
     let result = analyze_image(image_url, config).await?;
     Ok(result.is_blue_sky)
 }

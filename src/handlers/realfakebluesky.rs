@@ -6,7 +6,7 @@ pub async fn handle_fakebluesky(
     state: SharedState,
     params: FeedQuery,
 ) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
-    let skeleton = realfakebluesky::get_fake_feed_skeleton(
+    let skeleton = realfakebluesky_server::get_fake_feed_skeleton(
         &state.realfakebluesky_db,
         params.limit.unwrap_or(30),
         params.cursor.clone(),
@@ -27,7 +27,7 @@ pub async fn handle_realbluesky(
     state: SharedState,
     params: FeedQuery,
 ) -> Result<Json<bsky_core::FeedSkeletonResult>, AppError> {
-    let skeleton = realfakebluesky::get_real_feed_skeleton(
+    let skeleton = realfakebluesky_server::get_real_feed_skeleton(
         &state.realfakebluesky_db,
         params.limit.unwrap_or(30),
         params.cursor.clone(),

@@ -2,10 +2,12 @@
 members = [
     "crates/core",
     "crates/jetstream",
-    "crates/helloworld",
+    "crates/helloworld/consumer",
+    "crates/helloworld/server",
     "crates/todoapp",
     "crates/oneyearago",
-    "crates/realfakebluesky",
+    "crates/realfakebluesky/consumer",
+    "crates/realfakebluesky/server",
 ]
 resolver = "2"
 
@@ -55,10 +57,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bsky_core = { path = "crates/core" }
 jetstream = { path = "crates/jetstream" }
-helloworld = { path = "crates/helloworld" }
+helloworld-consumer = { path = "crates/helloworld/consumer" }
+helloworld-server = { path = "crates/helloworld/server" }
 todoapp = { path = "crates/todoapp" }
 oneyearago = { path = "crates/oneyearago" }
-realfakebluesky = { path = "crates/realfakebluesky" }
+realfakebluesky-consumer = { path = "crates/realfakebluesky/consumer" }
+realfakebluesky-server = { path = "crates/realfakebluesky/server" }
 atrium-api = { workspace = true }
 tokio-util = { workspace = true }
 futures-util = { workspace = true }

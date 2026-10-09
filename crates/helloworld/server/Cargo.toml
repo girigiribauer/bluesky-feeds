@@ -1,0 +1,13 @@
+[package]
+name = "helloworld-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bsky_core = { path = "../../core" }
+tracing = { workspace = true }
+sqlx = { workspace = true }
+
+[dev-dependencies]
+helloworld-consumer = { path = "../consumer" }
+tokio = { workspace = true, features = ["test-util"] }

@@ -15,6 +15,6 @@ pub async fn handle_helloworld(
         ))?;
 
     let pool = state.helloworld_db.clone();
-    let skeleton = helloworld::get_feed_skeleton(&pool, params.cursor, params.limit).await;
+    let skeleton = helloworld_server::get_feed_skeleton(&pool, params.cursor, params.limit).await;
     Ok(Json(skeleton))
 }

@@ -1,0 +1,13 @@
+[package]
+name = "realfakebluesky-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio"] }
+
+[dev-dependencies]
+realfakebluesky-consumer = { path = "../consumer" }
+tokio = { version = "1", features = ["full"] }
