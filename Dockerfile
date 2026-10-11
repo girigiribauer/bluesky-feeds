@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM rust:slim-bookworm AS chef
+FROM rust:1.99.0-slim-bookworm AS chef
 WORKDIR /build
 RUN cargo install cargo-chef
 RUN apt-get update && \
