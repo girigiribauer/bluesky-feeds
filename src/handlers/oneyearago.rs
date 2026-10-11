@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
 use axum::response::Json;
 use oneyearago::cache::CacheStore;
+use tracing::Instrument;
 
 pub async fn handle_oneyearago(
     state: SharedState,
@@ -106,13 +107,16 @@ pub async fn handle_oneyearago(
 
     if results.is_ok() {
         let store_for_cleanup = CacheStore::new(state.oneyearago_db.clone());
-        tokio::spawn(async move {
-            match store_for_cleanup.cleanup().await {
-                Ok(n) if n > 0 => tracing::info!("[cache] Cleaned up {} expired entries", n),
-                Ok(_) => {}
-                Err(e) => tracing::warn!("[cache] Cleanup error: {}", e),
+        tokio::spawn(
+            async move {
+                match store_for_cleanup.cleanup().await {
+                    Ok(n) if n > 0 => tracing::info!("[cache] Cleaned up {} expired entries", n),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("[cache] Cleanup error: {}", e),
+                }
             }
-        });
+            .in_current_span(),
+        );
     }
 
     results

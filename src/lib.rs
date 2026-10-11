@@ -3,10 +3,21 @@ pub mod error;
 pub mod handlers;
 pub mod state;
 
-use axum::{routing::get, Router};
+use axum::{
+    extract::{Query, Request},
+    routing::get,
+    Router,
+};
 use sqlx::SqlitePool;
-use state::SharedState;
+use state::{FeedQuery, SharedState};
 use tower_http::trace::TraceLayer;
+use tracing::field::display;
+
+fn request_span(request: &Request) -> tracing::Span {
+    let query = Query::<FeedQuery>::try_from_uri(request.uri()).ok();
+    let feed = query.as_ref().map(|q| display(q.feed_name()));
+    tracing::info_span!("request", feed)
+}
 
 pub fn app(state: SharedState) -> Router {
     Router::new()
@@ -21,7 +32,7 @@ pub fn app(state: SharedState) -> Router {
             get(handlers::describe_feed_generator),
         )
         .route("/.well-known/did.json", get(handlers::get_did_json))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http().make_span_with(request_span))
         .with_state(state)
 }
 

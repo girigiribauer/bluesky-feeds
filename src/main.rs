@@ -32,7 +32,6 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Connecting to database: {}", database_url);
 
     let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
-    helloworld_consumer::migrate(&helloworld_db).await?;
 
     let realfakebluesky_db_url = std::env::var("REALFAKEBLUESKY_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
@@ -41,7 +40,16 @@ async fn main() -> anyhow::Result<()> {
         realfakebluesky_db_url
     );
     let realfakebluesky_db = bluesky_feeds::connect_database(&realfakebluesky_db_url).await?;
-    realfakebluesky_consumer::migrate(&realfakebluesky_db).await?;
+
+    let apps: Vec<Arc<dyn jetstream::App>> = vec![
+        Arc::new(helloworld_consumer::HelloWorld::new(helloworld_db.clone())),
+        Arc::new(realfakebluesky_consumer::RealFakeBluesky::new(
+            realfakebluesky_db.clone(),
+        )),
+    ];
+    for app in &apps {
+        app.migrate().await?;
+    }
 
     let oneyearago_db_url = std::env::var("ONEYEARAGO_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/oneyearago.db".to_string());
@@ -96,27 +104,11 @@ async fn main() -> anyhow::Result<()> {
 
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
-        let state_for_consumer = app_state.clone();
-        tokio::spawn(async move {
-            jetstream::start_consumer(
-                state_for_consumer.realfakebluesky_db.clone(),
-                jetstream::ConsumerConfig::from_env(),
-                move |event| {
-                    let state = state_for_consumer.clone();
-                    async move {
-                        let jetstream::Event::Post(post) = event else {
-                            return;
-                        };
-
-                        helloworld_consumer::process_event(&state.helloworld_db, &post).await;
-
-                        realfakebluesky_consumer::process_event(&state.realfakebluesky_db, &post)
-                            .await;
-                    }
-                },
-            )
-            .await;
-        });
+        tokio::spawn(jetstream::start_consumer(
+            app_state.realfakebluesky_db.clone(),
+            jetstream::ConsumerConfig::from_env(),
+            apps,
+        ));
     } else {
         tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");
     }

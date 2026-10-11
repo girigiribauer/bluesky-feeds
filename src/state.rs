@@ -10,6 +10,12 @@ pub struct FeedQuery {
     pub limit: Option<usize>,
 }
 
+impl FeedQuery {
+    pub fn feed_name(&self) -> &str {
+        self.feed.rsplit('/').next().unwrap_or(&self.feed)
+    }
+}
+
 pub type SharedState = AppState;
 
 #[derive(Clone)]
@@ -28,4 +34,32 @@ pub struct AppState {
 pub struct ServiceAuth {
     pub token: Option<String>,
     pub did: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn query(feed: &str) -> FeedQuery {
+        FeedQuery {
+            feed: feed.to_string(),
+            cursor: None,
+            limit: None,
+        }
+    }
+
+    /// フィードの AT URI の、最後の / より後ろをフィード名として取り出すこと
+    #[test]
+    fn test_feed_name_is_last_segment_of_feed_uri() {
+        assert_eq!(
+            query("at://did:plc:abc/app.bsky.feed.generator/helloworld").feed_name(),
+            "helloworld"
+        );
+    }
+
+    /// / を含まない値は、そのままフィード名として扱うこと
+    #[test]
+    fn test_feed_name_without_separator_is_whole_value() {
+        assert_eq!(query("helloworld").feed_name(), "helloworld");
+    }
 }

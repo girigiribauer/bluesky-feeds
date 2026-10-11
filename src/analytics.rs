@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::Serialize;
+use tracing::Instrument;
 
 #[derive(Clone, Debug)]
 pub struct UmamiClient {
@@ -98,6 +99,7 @@ impl UmamiClient {
                     tracing::warn!("Failed to send analytics event: {}", e);
                 }
             }
-        });
+        }
+        .in_current_span());
     }
 }

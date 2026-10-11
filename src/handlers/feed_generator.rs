@@ -43,11 +43,7 @@ pub async fn get_feed_skeleton(
         "none"
     };
 
-    let feed_name = params
-        .feed
-        .split('/')
-        .next_back()
-        .ok_or(AppError::BadRequest("Invalid feed URI".to_string()))?;
+    let feed_name = params.feed_name();
 
     let feed_path = format!("/feeds/{}?did={}", feed_name, requester_did);
 

@@ -157,6 +157,21 @@ pub fn post_json(text: &str, time_us: i64) -> String {
     .to_string()
 }
 
+pub fn delete_json(time_us: i64) -> String {
+    json!({
+        "did": DID,
+        "time_us": time_us,
+        "kind": "commit",
+        "commit": {
+            "operation": "delete",
+            "rev": RKEY,
+            "rkey": RKEY,
+            "collection": "app.bsky.feed.post",
+        },
+    })
+    .to_string()
+}
+
 pub fn poison_account_json() -> String {
     json!({
         "did": DID,

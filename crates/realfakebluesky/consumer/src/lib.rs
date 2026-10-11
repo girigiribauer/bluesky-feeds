@@ -2,7 +2,7 @@ pub mod image_analyzer;
 
 use anyhow::{Context, Result};
 use image_analyzer::{is_blue_sky_image, BlueDetectionConfig};
-use jetstream::PostEvent;
+use jetstream::{App, PostEvent};
 use regex::Regex;
 use sqlx::SqlitePool;
 use std::sync::{Arc, OnceLock};
@@ -109,49 +109,74 @@ fn images_to_inspect(post: &PostEvent) -> Option<Vec<String>> {
     }
 }
 
-pub async fn process_event(pool: &SqlitePool, post: &PostEvent) {
-    let Some(image_urls) = images_to_inspect(post) else {
-        return;
-    };
+pub struct RealFakeBluesky {
+    pool: SqlitePool,
+}
 
-    let uri = post.uri();
+impl RealFakeBluesky {
+    pub fn new(pool: SqlitePool) -> Self {
+        RealFakeBluesky { pool }
+    }
+}
 
-    let t_image_start = std::time::Instant::now();
-    let sky_status = evaluate_sky_status(&image_urls).await;
-    let t_image = t_image_start.elapsed();
+#[async_trait::async_trait]
+impl App for RealFakeBluesky {
+    fn name(&self) -> &'static str {
+        "realfakebluesky"
+    }
 
-    let Some((table_name, indexed_at)) = stored_row(post, sky_status) else {
-        tracing::debug!("Excluding post with mixed images: {}", uri);
-        return;
-    };
+    async fn migrate(&self) -> anyhow::Result<()> {
+        migrate(&self.pool).await
+    }
 
-    let t_db_start = std::time::Instant::now();
-    let query = format!(
-        r#"
-        INSERT OR REPLACE INTO {} (uri, cid, indexed_at)
-        VALUES (?, ?, ?)
-        "#,
-        table_name
-    );
-    match sqlx::query(&query)
-        .bind(&uri)
-        .bind(&post.cid)
-        .bind(indexed_at)
-        .execute(pool)
-        .await
-    {
-        Ok(_) => {
-            let t_db = t_db_start.elapsed();
-            tracing::info!(
-                "MATCH [{}]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
-                table_name.split('_').next().unwrap_or("unknown"),
-                t_image.as_secs_f64() * 1000.0,
-                t_db.as_secs_f64() * 1000.0,
-                uri
-            );
-        }
-        Err(e) => {
-            tracing::error!("Failed to store post in {}: {}", table_name, e);
+    fn sieve(&self, post: &PostEvent) -> bool {
+        images_to_inspect(post).is_some()
+    }
+
+    async fn process(&self, post: &PostEvent) {
+        let Some(image_urls) = images_to_inspect(post) else {
+            return;
+        };
+
+        let uri = post.uri();
+
+        let t_image_start = std::time::Instant::now();
+        let sky_status = evaluate_sky_status(&image_urls).await;
+        let t_image = t_image_start.elapsed();
+
+        let Some((table_name, indexed_at)) = stored_row(post, sky_status) else {
+            tracing::debug!("Excluding post with mixed images: {}", uri);
+            return;
+        };
+
+        let t_db_start = std::time::Instant::now();
+        let query = format!(
+            r#"
+            INSERT OR REPLACE INTO {} (uri, cid, indexed_at)
+            VALUES (?, ?, ?)
+            "#,
+            table_name
+        );
+        match sqlx::query(&query)
+            .bind(&uri)
+            .bind(&post.cid)
+            .bind(indexed_at)
+            .execute(&self.pool)
+            .await
+        {
+            Ok(_) => {
+                let t_db = t_db_start.elapsed();
+                tracing::info!(
+                    "MATCH [{}]: t_image={:.1}ms, t_db={:.1}ms, uri={}",
+                    table_name.split('_').next().unwrap_or("unknown"),
+                    t_image.as_secs_f64() * 1000.0,
+                    t_db.as_secs_f64() * 1000.0,
+                    uri
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to store post in {}: {}", table_name, e);
+            }
         }
     }
 }
@@ -357,14 +382,15 @@ mod tests {
         })
     }
 
-    async fn migrated_pool() -> sqlx::SqlitePool {
+    async fn migrated_app() -> super::RealFakeBluesky {
         use super::*;
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        migrate(&pool).await.unwrap();
-        pool
+        let app = RealFakeBluesky::new(pool);
+        app.migrate().await.unwrap();
+        app
     }
 
     async fn stored_count(pool: &sqlx::SqlitePool) -> i64 {
@@ -443,28 +469,41 @@ mod tests {
         .is_some());
     }
 
-    /// 対象外の投稿では、何も保存されないこと
+    /// ふるいは、本文が bluesky だけで画像付きの投稿だけを通すこと
     #[tokio::test]
-    async fn test_process_event_stores_nothing_for_skipped_post() {
+    async fn test_sieve_passes_only_bluesky_posts_with_images() {
         use super::*;
-        let pool = migrated_pool().await;
+        let app = migrated_app().await;
 
-        process_event(
-            &pool,
-            &post_event("bluesky", "2026-01-01T00:00:00.000Z", None),
-        )
-        .await;
-        process_event(
-            &pool,
-            &post_event(
-                "I love bluesky",
-                "2026-01-01T00:00:00.000Z",
-                Some(images_embed()),
-            ),
-        )
+        assert!(app.sieve(&post_event(
+            "bluesky",
+            "2026-01-01T00:00:00.000Z",
+            Some(images_embed())
+        )));
+        assert!(!app.sieve(&post_event("bluesky", "2026-01-01T00:00:00.000Z", None)));
+        assert!(!app.sieve(&post_event(
+            "I love bluesky",
+            "2026-01-01T00:00:00.000Z",
+            Some(images_embed())
+        )));
+    }
+
+    /// 対象外の投稿が本処理に来ても、何も保存されないこと
+    #[tokio::test]
+    async fn test_process_stores_nothing_for_skipped_post() {
+        use super::*;
+        let app = migrated_app().await;
+
+        app.process(&post_event("bluesky", "2026-01-01T00:00:00.000Z", None))
+            .await;
+        app.process(&post_event(
+            "I love bluesky",
+            "2026-01-01T00:00:00.000Z",
+            Some(images_embed()),
+        ))
         .await;
 
-        assert_eq!(stored_count(&pool).await, 0);
+        assert_eq!(stored_count(&app.pool).await, 0);
     }
 
     /// 画像の判定結果から、書き込み先のテーブルと並び順の値が決まること

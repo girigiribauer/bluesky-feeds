@@ -1,13 +1,16 @@
+mod app;
+mod dispatch;
 pub mod event;
 pub mod ws;
 
 #[cfg(test)]
 mod local_jetstream;
 
+pub use app::App;
 pub use event::{Event, Operation, PostDelete, PostEvent, PostRecord, SkipStats, POST_COLLECTION};
 pub use ws::{SessionEnd, SessionOutcome, SkipCounters};
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use dispatch::{Dispatcher, Progress};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
@@ -22,6 +25,7 @@ pub struct ConsumerConfig {
     pub endpoint: String,
     pub wanted_collections: Vec<String>,
     pub queue_capacity: usize,
+    pub app_queue_capacity: usize,
     pub idle_timeout: Duration,
     pub replay_buffer_us: i64,
     pub cursor_save_interval: Duration,
@@ -35,6 +39,7 @@ impl Default for ConsumerConfig {
             endpoint: String::new(),
             wanted_collections: vec![POST_COLLECTION.to_string()],
             queue_capacity: 2048,
+            app_queue_capacity: 1000,
             idle_timeout: Duration::from_secs(30),
             replay_buffer_us: 1_000_000,
             cursor_save_interval: Duration::from_secs(5),
@@ -123,7 +128,13 @@ impl Metrics {
         self.last_time_us = Some(time_us);
     }
 
-    fn maybe_report(&mut self, queue_len: usize, queue_capacity: usize, counters: &SkipCounters) {
+    fn maybe_report(
+        &mut self,
+        queue_len: usize,
+        queue_capacity: usize,
+        app_queues: &str,
+        counters: &SkipCounters,
+    ) {
         let elapsed = self.window_start.elapsed();
         if elapsed < self.interval {
             return;
@@ -139,12 +150,13 @@ impl Metrics {
         };
 
         tracing::info!(
-            "METRICS [{}s]: processed={} rate={:.1}/s queue={}/{} lag={:.1}s advance={} eta={} skip{{json={},non_commit={},other_coll={},unknown_op={},no_record={},loose={},binary={}}}",
+            "METRICS [{}s]: processed={} rate={:.1}/s queue={}/{} apps{{{}}} lag={:.1}s advance={} eta={} skip{{json={},non_commit={},other_coll={},unknown_op={},no_record={},loose={},binary={}}}",
             elapsed.as_secs(),
             self.processed,
             rate,
             queue_len,
             queue_capacity,
+            app_queues,
             lag_secs,
             rate_of_catch_up
                 .map(|rate| format!("{:.1}x", rate))
@@ -169,17 +181,14 @@ impl Metrics {
     }
 }
 
-pub async fn start_consumer<F, Fut>(
-    realfakebluesky_db: sqlx::SqlitePool,
+pub async fn start_consumer(
+    cursor_pool: sqlx::SqlitePool,
     config: ConsumerConfig,
-    callback: F,
-) where
-    F: Fn(Event) -> Fut + Send + Sync + 'static + Clone,
-    Fut: std::future::Future<Output = ()> + Send,
-{
+    apps: Vec<Arc<dyn App>>,
+) {
     let initial_cursor_us: Option<i64> =
         sqlx::query_scalar("SELECT cursor_us FROM jetstream_cursor WHERE id = 1")
-            .fetch_optional(&realfakebluesky_db)
+            .fetch_optional(&cursor_pool)
             .await
             .unwrap_or(None);
     tracing::info!(
@@ -187,16 +196,17 @@ pub async fn start_consumer<F, Fut>(
         initial_cursor_us
     );
 
-    let latest_cursor = Arc::new(AtomicI64::new(initial_cursor_us.unwrap_or(0)));
+    let progress = Arc::new(Progress::new(initial_cursor_us.unwrap_or(0)));
+    let dispatcher = Dispatcher::start(apps, config.app_queue_capacity, progress.clone());
 
     {
-        let cursor_for_save = latest_cursor.clone();
-        let pool_for_save = realfakebluesky_db.clone();
+        let progress_for_save = progress.clone();
+        let pool_for_save = cursor_pool.clone();
         let interval = config.cursor_save_interval;
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(interval).await;
-                save_cursor(&pool_for_save, &cursor_for_save).await;
+                save_cursor(&pool_for_save, &progress_for_save).await;
             }
         });
     }
@@ -206,10 +216,7 @@ pub async fn start_consumer<F, Fut>(
     let mut backoff = config.backoff_min;
 
     loop {
-        let cursor_us = reconnect_cursor_us(
-            latest_cursor.load(Ordering::Relaxed),
-            config.replay_buffer_us,
-        );
+        let cursor_us = reconnect_cursor_us(progress.dispatched_us(), config.replay_buffer_us);
         let url = ws::build_subscribe_url(&config.endpoint, &config.wanted_collections, cursor_us);
         tracing::info!("Starting Jetstream connection with cursor: {:?}", cursor_us);
 
@@ -225,11 +232,15 @@ pub async fn start_consumer<F, Fut>(
         let mut processed = 0u64;
         while let Some(event) = rx.recv().await {
             let time_us = event.time_us();
-            callback(event).await;
-            latest_cursor.fetch_max(time_us, Ordering::Relaxed);
+            dispatcher.dispatch(event).await;
             processed += 1;
             metrics.record(time_us);
-            metrics.maybe_report(rx.len(), config.queue_capacity, &counters);
+            metrics.maybe_report(
+                rx.len(),
+                config.queue_capacity,
+                &dispatcher.queue_report(),
+                &counters,
+            );
         }
 
         let outcome = match session.await {
@@ -240,7 +251,7 @@ pub async fn start_consumer<F, Fut>(
                 continue;
             }
         };
-        save_cursor(&realfakebluesky_db, &latest_cursor).await;
+        save_cursor(&cursor_pool, &progress).await;
 
         let session_secs = session_start.elapsed().as_secs();
         let successful = was_session_successful(processed, session_secs);
@@ -260,8 +271,8 @@ pub async fn start_consumer<F, Fut>(
     }
 }
 
-async fn save_cursor(pool: &sqlx::SqlitePool, latest_cursor: &AtomicI64) {
-    let cursor = latest_cursor.load(Ordering::Relaxed);
+async fn save_cursor(pool: &sqlx::SqlitePool, progress: &Progress) {
+    let cursor = progress.safe_cursor_us();
     if cursor <= 0 {
         return;
     }
@@ -449,7 +460,7 @@ mod tests {
 
         metrics.record(1_700_000_000_000_000);
         metrics.record(1_700_000_000_000_500);
-        metrics.maybe_report(0, 2048, &counters);
+        metrics.maybe_report(0, 2048, "", &counters);
 
         assert_eq!(metrics.processed, 2);
         assert_eq!(metrics.first_time_us, Some(1_700_000_000_000_000));
@@ -463,7 +474,7 @@ mod tests {
         let counters = SkipCounters::default();
 
         metrics.record(1_700_000_000_000_000);
-        metrics.maybe_report(0, 2048, &counters);
+        metrics.maybe_report(0, 2048, "", &counters);
 
         assert_eq!(metrics.processed, 0);
         assert_eq!(metrics.first_time_us, None);
@@ -480,7 +491,7 @@ mod tests {
             non_commit: 3,
             ..SkipStats::default()
         });
-        metrics.maybe_report(0, 2048, &counters);
+        metrics.maybe_report(0, 2048, "", &counters);
         assert_eq!(metrics.reported_skips.non_commit, 3);
 
         counters.add(&SkipStats {
@@ -488,10 +499,48 @@ mod tests {
             ..SkipStats::default()
         });
         let before = metrics.reported_skips;
-        metrics.maybe_report(0, 2048, &counters);
+        metrics.maybe_report(0, 2048, "", &counters);
 
         assert_eq!(counters.snapshot().since(&before).non_commit, 2);
         assert_eq!(metrics.reported_skips.non_commit, 5);
+    }
+
+    struct RecordingApp {
+        gate: Option<Arc<tokio::sync::Semaphore>>,
+        received: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl App for RecordingApp {
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+
+        async fn migrate(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn sieve(&self, _post: &PostEvent) -> bool {
+            true
+        }
+
+        async fn process(&self, post: &PostEvent) {
+            if let Some(gate) = &self.gate {
+                gate.acquire().await.unwrap().forget();
+            }
+            self.received.lock().unwrap().push(post.record.text.clone());
+        }
+    }
+
+    type Received = Arc<std::sync::Mutex<Vec<String>>>;
+
+    fn recording_app(gate: Option<Arc<tokio::sync::Semaphore>>) -> (Vec<Arc<dyn App>>, Received) {
+        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let app = RecordingApp {
+            gate,
+            received: received.clone(),
+        };
+        (vec![Arc::new(app)], received)
     }
 
     /// 処理した分だけカーソルが進み、DB に保存されること
@@ -505,17 +554,11 @@ mod tests {
         .await;
         let pool = cursor_pool(None).await;
 
-        let processed = Arc::new(AtomicI64::new(0));
-        let processed_for_callback = processed.clone();
+        let (apps, received) = recording_app(None);
         let consumer = tokio::spawn(start_consumer(
             pool.clone(),
             test_config(server.url()),
-            move |_event| {
-                let processed = processed_for_callback.clone();
-                async move {
-                    processed.fetch_add(1, Ordering::Relaxed);
-                }
-            },
+            apps,
         ));
 
         let mut stored = None;
@@ -529,10 +572,10 @@ mod tests {
         consumer.abort();
 
         assert_eq!(stored, Some(1_700_000_000_000_500));
-        assert_eq!(processed.load(Ordering::Relaxed), 2);
+        assert_eq!(*received.lock().unwrap(), vec!["first", "second"]);
     }
 
-    /// 処理が終わるまでカーソルを進めないこと（途中で落ちても取りこぼさない）
+    /// 処理が終わるまで、その投稿より先にカーソルを進めないこと（途中で落ちても取りこぼさない）
     #[tokio::test]
     async fn test_start_consumer_holds_cursor_until_processing_finishes() {
         let server = LocalJetstream::start(vec![
@@ -544,20 +587,16 @@ mod tests {
         let pool = cursor_pool(Some(1_000_000)).await;
 
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
-        let gate_for_callback = gate.clone();
+        let (apps, _received) = recording_app(Some(gate.clone()));
         let consumer = tokio::spawn(start_consumer(
             pool.clone(),
             test_config(server.url()),
-            move |_event| {
-                let gate = gate_for_callback.clone();
-                async move {
-                    gate.acquire().await.unwrap().forget();
-                }
-            },
+            apps,
         ));
 
         tokio::time::sleep(Duration::from_millis(200)).await;
-        assert_eq!(stored_cursor(&pool).await, Some(1_000_000));
+        let held = stored_cursor(&pool).await.unwrap();
+        assert!(held < 1_700_000_000_000_000, "{held}");
 
         gate.add_permits(2);
         let mut stored = None;
@@ -579,7 +618,8 @@ mod tests {
         let pool = cursor_pool(Some(1_700_000_000_000_000)).await;
         let config = test_config("ws://127.0.0.1:1/subscribe".to_string());
 
-        let consumer = tokio::spawn(start_consumer(pool.clone(), config, |_event| async {}));
+        let (apps, _received) = recording_app(None);
+        let consumer = tokio::spawn(start_consumer(pool.clone(), config, apps));
         tokio::time::sleep(Duration::from_millis(200)).await;
         consumer.abort();
 
@@ -592,10 +632,11 @@ mod tests {
         let server = LocalJetstream::start(vec![Script::Sleep(Duration::from_secs(5))]).await;
         let pool = cursor_pool(Some(1_700_000_000_000_000)).await;
 
+        let (apps, _received) = recording_app(None);
         let consumer = tokio::spawn(start_consumer(
             pool.clone(),
             test_config(server.url()),
-            |_event| async {},
+            apps,
         ));
         tokio::time::sleep(Duration::from_millis(200)).await;
         consumer.abort();
@@ -604,6 +645,7 @@ mod tests {
         assert!(requested.contains("cursor=1699999999000000"), "{requested}");
     }
 
+    /// 接続が切れても、最後に振り分けた投稿の続きから繋ぎ直し、すべての投稿を受け取ること
     #[tokio::test]
     async fn test_start_consumer_resumes_from_last_event_after_connection_drop() {
         let server = LocalJetstream::start_sessions(vec![
@@ -621,19 +663,11 @@ mod tests {
         .await;
         let pool = cursor_pool(None).await;
 
-        let received = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let received_for_callback = received.clone();
+        let (apps, received) = recording_app(None);
         let consumer = tokio::spawn(start_consumer(
             pool.clone(),
             test_config(server.url()),
-            move |event| {
-                let received = received_for_callback.clone();
-                async move {
-                    if let Event::Post(post) = event {
-                        received.lock().unwrap().push(post.record.text.clone());
-                    }
-                }
-            },
+            apps,
         ));
 
         for _ in 0..100 {
@@ -658,16 +692,60 @@ mod tests {
         );
     }
 
+    /// 処理中の投稿が残ったまま接続が切れても、処理済みの位置ではなく振り分け済みの位置から繋ぎ直すこと（同じ投稿を二重に待ち行列へ入れない）
+    #[tokio::test]
+    async fn test_start_consumer_reconnects_from_dispatched_position_while_processing() {
+        let server = LocalJetstream::start_sessions(vec![
+            vec![
+                Script::Text(post_json("first", 1_700_000_000_000_000)),
+                Script::Text(post_json("second", 1_700_000_000_000_500)),
+                Script::Drop,
+            ],
+            vec![Script::Sleep(Duration::from_secs(5))],
+        ])
+        .await;
+        let pool = cursor_pool(None).await;
+
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let (apps, received) = recording_app(Some(gate.clone()));
+        let consumer = tokio::spawn(start_consumer(
+            pool.clone(),
+            test_config(server.url()),
+            apps,
+        ));
+
+        for _ in 0..100 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if server.requested_uris().len() >= 2 {
+                break;
+            }
+        }
+        let still_processing = received.lock().unwrap().is_empty();
+        gate.add_permits(2);
+        consumer.abort();
+
+        assert!(still_processing);
+        let requested = server.requested_uris();
+        assert_eq!(requested.len(), 2, "{requested:?}");
+        assert!(
+            requested[1].contains("cursor=1699999999000500"),
+            "{}",
+            requested[1]
+        );
+    }
+
+    /// 保存済みのカーソルが古くても、最新に飛ばずにそこから遡って接続すること
     #[tokio::test]
     async fn test_start_consumer_keeps_old_cursor_instead_of_jumping_to_live() {
         let an_hour_ago_us = chrono::Utc::now().timestamp_micros() - 3_600_000_000;
         let server = LocalJetstream::start(vec![Script::Sleep(Duration::from_secs(5))]).await;
         let pool = cursor_pool(Some(an_hour_ago_us)).await;
 
+        let (apps, _received) = recording_app(None);
         let consumer = tokio::spawn(start_consumer(
             pool.clone(),
             test_config(server.url()),
-            |_event| async {},
+            apps,
         ));
         tokio::time::sleep(Duration::from_millis(200)).await;
         consumer.abort();
