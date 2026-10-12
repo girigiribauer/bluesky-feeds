@@ -19,7 +19,7 @@ async fn test_get_feed_skeleton_helloworld_success() {
     assert!(body["cursor"].is_null() || body["cursor"].is_string());
 }
 
-/// OneYearAgoフィードが正常に取得できるか（JWTからDID抽出）
+/// OneYearAgoフィードが正常に取得できるか（JWTからDID抽出、Bluesky への問い合わせは手元の偽 API に向くこと）
 #[tokio::test]
 async fn test_get_feed_skeleton_oneyearago_success() {
     let client = TestClient::new().await;
@@ -37,6 +37,7 @@ async fn test_get_feed_skeleton_oneyearago_success() {
     }
     assert_eq!(status, StatusCode::OK);
     assert!(body["feed"].is_array());
+    assert!(client.bluesky_api.requests() > 0);
 }
 
 /// 認証ヘッダーがない場合に 401 Unauthorized を返すか

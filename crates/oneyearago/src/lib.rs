@@ -7,10 +7,9 @@ use crate::api::BlueskyFetcher;
 use crate::cache::CacheStore;
 use anyhow::Result;
 use bsky_core::FeedSkeletonResult;
-use reqwest::Client;
 
 pub async fn get_feed_skeleton(
-    client: &Client,
+    fetcher: &BlueskyFetcher,
     #[allow(unused_variables)] auth_header: &str,
     service_token: &str,
     actor: &str,
@@ -18,9 +17,8 @@ pub async fn get_feed_skeleton(
     cursor: Option<String>,
     cache: Option<&CacheStore>,
 ) -> Result<FeedSkeletonResult> {
-    let fetcher = BlueskyFetcher::new(client.clone());
     let (feed_items, next_cursor) = logic::fetch_posts_from_past(
-        &fetcher,
+        fetcher,
         service_token,
         auth_header,
         actor,

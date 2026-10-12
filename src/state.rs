@@ -21,6 +21,7 @@ pub type SharedState = AppState;
 #[derive(Clone)]
 pub struct AppState {
     pub http_client: reqwest::Client,
+    pub bluesky_api_base: String,
     pub service_auth: Arc<RwLock<ServiceAuth>>,
     pub auth_handle: String,
     pub auth_password: String,

@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
-use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    Callback, ErrorResponse, Request, Response,
+};
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::Message;
@@ -89,18 +91,23 @@ impl Drop for LocalJetstream {
     }
 }
 
+struct UriRecorder(Arc<Mutex<Vec<String>>>);
+
+impl Callback for UriRecorder {
+    fn on_request(self, request: &Request, response: Response) -> Result<Response, ErrorResponse> {
+        self.0.lock().unwrap().push(request.uri().to_string());
+        Ok(response)
+    }
+}
+
 async fn serve(
     stream: TcpStream,
     script: Vec<Script>,
     uri_log: Arc<Mutex<Vec<String>>>,
     pongs: Arc<AtomicU64>,
 ) {
-    let callback = |request: &Request, response: Response| {
-        uri_log.lock().unwrap().push(request.uri().to_string());
-        Ok(response)
-    };
-
-    let Ok(mut socket) = tokio_tungstenite::accept_hdr_async(stream, callback).await else {
+    let Ok(mut socket) = tokio_tungstenite::accept_hdr_async(stream, UriRecorder(uri_log)).await
+    else {
         return;
     };
 

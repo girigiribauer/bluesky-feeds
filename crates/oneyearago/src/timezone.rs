@@ -55,8 +55,13 @@ fn parse_timezone_description(description: &str) -> Option<FixedOffset> {
     None
 }
 
-pub async fn determine_timezone(client: &Client, handle: &str, token: &str) -> Result<FixedOffset> {
-    let url = "https://api.bsky.app/xrpc/app.bsky.actor.getProfile";
+pub async fn determine_timezone(
+    client: &Client,
+    api_base: &str,
+    handle: &str,
+    token: &str,
+) -> Result<FixedOffset> {
+    let url = format!("{}/xrpc/app.bsky.actor.getProfile", api_base);
 
     let auth_val = if token.starts_with("Bearer ") {
         token.to_string()
@@ -65,7 +70,7 @@ pub async fn determine_timezone(client: &Client, handle: &str, token: &str) -> R
     };
 
     let res = client
-        .get(url)
+        .get(&url)
         .header("Authorization", auth_val)
         .query(&[("actor", handle)])
         .send()

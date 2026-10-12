@@ -44,11 +44,15 @@ pub trait PostFetcher {
 
 pub struct BlueskyFetcher {
     client: Client,
+    api_base: String,
 }
 
 impl BlueskyFetcher {
-    pub fn new(client: Client) -> Self {
-        Self { client }
+    pub fn new(client: Client, api_base: &str) -> Self {
+        Self {
+            client,
+            api_base: api_base.to_string(),
+        }
     }
 }
 
@@ -63,12 +67,12 @@ impl PostFetcher for BlueskyFetcher {
         limit: usize,
         cursor: Option<String>,
     ) -> Result<(Vec<PostView>, Option<String>)> {
-        let url = "https://api.bsky.app/xrpc/app.bsky.feed.searchPosts";
+        let url = format!("{}/xrpc/app.bsky.feed.searchPosts", self.api_base);
         let q = format!("from:{} since:{} until:{}", author, since, until);
 
         let mut req = self
             .client
-            .get(url)
+            .get(&url)
             .header("Authorization", format!("Bearer {}", token))
             .query(&[
                 ("q", q.as_str()),
@@ -99,6 +103,6 @@ impl PostFetcher for BlueskyFetcher {
         handle: &str,
         user_token: &str,
     ) -> Result<chrono::FixedOffset> {
-        timezone::determine_timezone(&self.client, handle, user_token).await
+        timezone::determine_timezone(&self.client, &self.api_base, handle, user_token).await
     }
 }

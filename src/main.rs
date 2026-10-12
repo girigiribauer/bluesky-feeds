@@ -83,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app_state = AppState {
         http_client,
+        bluesky_api_base: "https://api.bsky.app".to_string(),
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
             token: initial_token,
             did: initial_did,

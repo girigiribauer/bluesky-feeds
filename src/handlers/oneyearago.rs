@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::state::{FeedQuery, SharedState};
 use axum::response::Json;
+use oneyearago::api::BlueskyFetcher;
 use oneyearago::cache::CacheStore;
 use tracing::Instrument;
 
@@ -28,11 +29,12 @@ pub async fn handle_oneyearago(
         "Service not authenticated"
     )))?;
 
+    let fetcher = BlueskyFetcher::new(client.clone(), &state.bluesky_api_base);
     let cache_store = CacheStore::new(state.oneyearago_db.clone());
     let cache = Some(&cache_store);
 
     let results = match oneyearago::get_feed_skeleton(
-        &client,
+        &fetcher,
         auth_header,
         &token,
         &did,
@@ -65,7 +67,7 @@ pub async fn handle_oneyearago(
                             }
 
                             match oneyearago::get_feed_skeleton(
-                                &client,
+                                &fetcher,
                                 auth_header,
                                 &new_token,
                                 &did,

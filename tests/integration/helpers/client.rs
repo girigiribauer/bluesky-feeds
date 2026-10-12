@@ -1,3 +1,4 @@
+use super::fake_bluesky_api::FakeBlueskyApi;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -14,13 +15,19 @@ use tower::ServiceExt;
 pub struct TestClient {
     pub router: Router,
     pub state: SharedState,
+    pub bluesky_api: FakeBlueskyApi,
 }
 
 impl TestClient {
     pub async fn new() -> Self {
-        let state = create_test_state().await;
+        let bluesky_api = FakeBlueskyApi::start().await;
+        let state = create_test_state(&bluesky_api.url).await;
         let router = app(state.clone());
-        Self { router, state }
+        Self {
+            router,
+            state,
+            bluesky_api,
+        }
     }
 
     pub async fn get_feed_skeleton(
@@ -111,7 +118,7 @@ impl TestClient {
     }
 }
 
-async fn create_test_state() -> SharedState {
+async fn create_test_state(bluesky_api_base: &str) -> SharedState {
     let db = sqlx::sqlite::SqlitePoolOptions::new()
         .connect("sqlite::memory:")
         .await
@@ -148,6 +155,7 @@ async fn create_test_state() -> SharedState {
 
     AppState {
         http_client: reqwest::Client::new(),
+        bluesky_api_base: bluesky_api_base.to_string(),
         service_auth: Arc::new(RwLock::new(bluesky_feeds::state::ServiceAuth {
             token: Some("mock_service_token_for_testing".to_string()),
             did: Some("did:plc:test123456789".to_string()),

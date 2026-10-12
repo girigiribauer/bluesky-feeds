@@ -2,7 +2,7 @@
 
 FROM rust:1.99.0-slim-bookworm AS chef
 WORKDIR /build
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --version 0.1.78 --locked
 RUN apt-get update && \
     apt-get install -y pkg-config libssl-dev perl make && \
     rm -rf /var/lib/apt/lists/*
