@@ -70,23 +70,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: コンテナ設定
-        id: meta
+      - name: server のコンテナ設定
+        id: meta-server
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=build-${{ github.run_number }}
+            type=raw,value=server-latest,enable={{is_default_branch}}
+            type=raw,value=server-build-${{ github.run_number }}
 
-      - name: Rust アプリの Docker イメージをビルド・プッシュ
+      - name: server の Docker イメージをビルド・プッシュ
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
+          target: server
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+
+      - name: consumer のコンテナ設定
+        id: meta-consumer
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=consumer-latest,enable={{is_default_branch}}
+            type=raw,value=consumer-build-${{ github.run_number }}
+
+      - name: consumer の Docker イメージをビルド・プッシュ
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: consumer
+          push: true
+          tags: ${{ steps.meta-consumer.outputs.tags }}
+          labels: ${{ steps.meta-consumer.outputs.labels }}
 
       - name: VPS へデプロイ
         env:

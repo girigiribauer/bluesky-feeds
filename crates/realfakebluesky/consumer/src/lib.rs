@@ -64,18 +64,6 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
 
     sqlx::query(
         r#"
-        CREATE TABLE IF NOT EXISTS jetstream_cursor (
-            id        INTEGER PRIMARY KEY CHECK (id = 1),
-            cursor_us INTEGER NOT NULL
-        );
-        "#,
-    )
-    .execute(pool)
-    .await
-    .context("Failed to create jetstream_cursor table")?;
-
-    sqlx::query(
-        r#"
         UPDATE fake_bluesky_posts
         SET indexed_at = indexed_at * 1000000
         WHERE indexed_at < 10000000000;

@@ -8,3 +8,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 base64 = "0.21"
+sqlx = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

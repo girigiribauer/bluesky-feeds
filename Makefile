@@ -1,7 +1,10 @@
 test: fmt lint test-all
 
 dev:
-	./scripts/dev.sh
+	./scripts/dev.sh -p bluesky-feeds --bin bluesky-feeds
+
+dev-consumer:
+	./scripts/dev.sh -p bluesky-feeds-consumer
 
 test-all:
 	cargo test --workspace

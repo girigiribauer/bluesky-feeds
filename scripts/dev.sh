@@ -7,4 +7,4 @@ if [ -f .env ]; then
 fi
 
 mkdir -p data
-RUST_LOG=info cargo run --bin bluesky-feeds
+RUST_LOG=info cargo run "$@"

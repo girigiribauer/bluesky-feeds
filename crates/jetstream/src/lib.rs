@@ -1,4 +1,5 @@
 mod app;
+mod cursor;
 mod dispatch;
 pub mod event;
 pub mod ws;
@@ -7,6 +8,7 @@ pub mod ws;
 mod local_jetstream;
 
 pub use app::App;
+pub use cursor::{adopt_legacy_cursor, migrate_cursor};
 pub use event::{Event, Operation, PostDelete, PostEvent, PostRecord, SkipStats, POST_COLLECTION};
 pub use ws::{SessionEnd, SessionOutcome, SkipCounters};
 

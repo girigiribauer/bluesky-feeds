@@ -1,0 +1,19 @@
+[package]
+name = "bluesky-feeds-consumer"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "consumer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+bsky_core = { workspace = true }
+helloworld-consumer = { path = "../crates/helloworld/consumer" }
+jetstream = { path = "../crates/jetstream" }
+realfakebluesky-consumer = { path = "../crates/realfakebluesky/consumer" }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

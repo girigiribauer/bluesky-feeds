@@ -288,6 +288,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bluesky-feeds-consumer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bsky_core",
+ "helloworld-consumer",
+ "jetstream",
+ "realfakebluesky-consumer",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "bsky_core"
 version = "0.1.0"
 dependencies = [
@@ -295,6 +310,8 @@ dependencies = [
  "base64 0.21.7",
  "serde",
  "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]

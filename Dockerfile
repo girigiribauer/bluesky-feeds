@@ -15,11 +15,17 @@ FROM chef AS cacher
 COPY --from=planner /build/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
-FROM chef AS builder
+FROM chef AS builder-consumer
 COPY . .
 COPY --from=cacher /build/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo
-RUN cargo build --release
+RUN cargo build --release -p bluesky-feeds-consumer --bin consumer
+
+FROM chef AS builder-server
+COPY . .
+COPY --from=cacher /build/target target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+RUN cargo build --release -p bluesky-feeds --bin bluesky-feeds
 
 FROM debian:trixie-slim AS runtime
 
@@ -27,8 +33,17 @@ RUN apt-get update && \
     apt-get install -y ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/target/release/bluesky-feeds /usr/local/bin/app
 WORKDIR /usr/local/bin
+
+FROM runtime AS consumer
+
+COPY --from=builder-consumer /build/target/release/consumer /usr/local/bin/app
+
+CMD ["/usr/local/bin/app"]
+
+FROM runtime AS server
+
+COPY --from=builder-server /build/target/release/bluesky-feeds /usr/local/bin/app
 
 ENV PORT=3000
 EXPOSE 3000

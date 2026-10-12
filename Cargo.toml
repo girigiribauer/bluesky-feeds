@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "consumer",
     "crates/core",
     "crates/jetstream",
     "crates/helloworld/consumer",

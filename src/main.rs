@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "sqlite:data/helloworld.db".to_string());
     tracing::info!("Connecting to database: {}", database_url);
 
-    let helloworld_db = bluesky_feeds::connect_database(&database_url).await?;
+    let helloworld_db = bsky_core::database::connect_database(&database_url).await?;
 
     let realfakebluesky_db_url = std::env::var("REALFAKEBLUESKY_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/fakebluesky.db".to_string());
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
         "Connecting to realfakebluesky database: {}",
         realfakebluesky_db_url
     );
-    let realfakebluesky_db = bluesky_feeds::connect_database(&realfakebluesky_db_url).await?;
+    let realfakebluesky_db = bsky_core::database::connect_database(&realfakebluesky_db_url).await?;
 
     let apps: Vec<Arc<dyn jetstream::App>> = vec![
         Arc::new(helloworld_consumer::HelloWorld::new(helloworld_db.clone())),
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         "Connecting to oneyearago cache database: {}",
         oneyearago_db_url
     );
-    let oneyearago_db = bluesky_feeds::connect_database(&oneyearago_db_url).await?;
+    let oneyearago_db = bsky_core::database::connect_database(&oneyearago_db_url).await?;
     oneyearago::cache::migrate(&oneyearago_db).await?;
 
     let http_client = reqwest::Client::builder()
@@ -105,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
 
     let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
     if enable_jetstream == "true" {
+        jetstream::migrate_cursor(&app_state.realfakebluesky_db).await?;
         tokio::spawn(jetstream::start_consumer(
             app_state.realfakebluesky_db.clone(),
             jetstream::ConsumerConfig::from_env(),
