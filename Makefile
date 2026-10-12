@@ -34,4 +34,4 @@ unpublish:
 	cargo run --bin unpublish_feed $(FEED)
 
 check-image:
-	cargo run --bin check_image $(IMAGE)
+	cargo run -p bluesky-feeds-consumer --bin check_image $(IMAGE)

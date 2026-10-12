@@ -41,16 +41,6 @@ async fn main() -> anyhow::Result<()> {
     );
     let realfakebluesky_db = bsky_core::database::connect_database(&realfakebluesky_db_url).await?;
 
-    let apps: Vec<Arc<dyn jetstream::App>> = vec![
-        Arc::new(helloworld_consumer::HelloWorld::new(helloworld_db.clone())),
-        Arc::new(realfakebluesky_consumer::RealFakeBluesky::new(
-            realfakebluesky_db.clone(),
-        )),
-    ];
-    for app in &apps {
-        app.migrate().await?;
-    }
-
     let oneyearago_db_url = std::env::var("ONEYEARAGO_DB_URL")
         .unwrap_or_else(|_| "sqlite:data/oneyearago.db".to_string());
     tracing::info!(
@@ -102,18 +92,6 @@ async fn main() -> anyhow::Result<()> {
             ),
         ),
     };
-
-    let enable_jetstream = std::env::var("ENABLE_JETSTREAM").unwrap_or_else(|_| "true".to_string());
-    if enable_jetstream == "true" {
-        jetstream::migrate_cursor(&app_state.realfakebluesky_db).await?;
-        tokio::spawn(jetstream::start_consumer(
-            app_state.realfakebluesky_db.clone(),
-            jetstream::ConsumerConfig::from_env(),
-            apps,
-        ));
-    } else {
-        tracing::info!("Jetstream consumer is disabled (ENABLE_JETSTREAM != true)");
-    }
 
     let port = std::env::var("PORT")
         .ok()

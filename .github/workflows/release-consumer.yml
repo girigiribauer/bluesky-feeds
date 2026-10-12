@@ -1,11 +1,33 @@
-name: Release
+name: Release consumer
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "src/**"
+      - "crates/*/server/**"
+      - "crates/oneyearago/**"
+      - "crates/todoapp/**"
+      - "tests/**"
+      - "**.md"
+      - "Makefile"
+      - "scripts/**"
+      - ".env.example"
+      - ".github/workflows/release-server.yml"
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "src/**"
+      - "crates/*/server/**"
+      - "crates/oneyearago/**"
+      - "crates/todoapp/**"
+      - "tests/**"
+      - "**.md"
+      - "Makefile"
+      - "scripts/**"
+      - ".env.example"
+      - ".github/workflows/release-server.yml"
   workflow_dispatch:
 
 jobs:
@@ -49,6 +71,9 @@ jobs:
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-feeds
+      cancel-in-progress: false
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository }}
@@ -70,35 +95,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: server のコンテナ設定
-        id: meta-server
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value=build-${{ github.run_number }}
-            type=raw,value=server-latest,enable={{is_default_branch}}
-            type=raw,value=server-build-${{ github.run_number }}
-
-      - name: server の Docker イメージをビルド・プッシュ
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          target: server
-          push: true
-          tags: ${{ steps.meta-server.outputs.tags }}
-          labels: ${{ steps.meta-server.outputs.labels }}
-
       - name: consumer のコンテナ設定
-        id: meta-consumer
+        id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=consumer-latest,enable={{is_default_branch}}
-            type=raw,value=consumer-build-${{ github.run_number }}
+            type=sha,prefix=consumer-sha-
 
       - name: consumer の Docker イメージをビルド・プッシュ
         uses: docker/build-push-action@v6
@@ -107,8 +111,8 @@ jobs:
           file: ./Dockerfile
           target: consumer
           push: true
-          tags: ${{ steps.meta-consumer.outputs.tags }}
-          labels: ${{ steps.meta-consumer.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: VPS へデプロイ
         env:
@@ -121,7 +125,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
 
           ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && \
-          docker compose pull app && docker compose up -d"
+          docker compose pull consumer && docker compose up -d consumer"
 
       - name: 秘密鍵の削除
         if: always()

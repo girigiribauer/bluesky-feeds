@@ -57,12 +57,9 @@ tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bsky_core = { path = "crates/core" }
-jetstream = { path = "crates/jetstream" }
-helloworld-consumer = { path = "crates/helloworld/consumer" }
 helloworld-server = { path = "crates/helloworld/server" }
 todoapp = { path = "crates/todoapp" }
 oneyearago = { path = "crates/oneyearago" }
-realfakebluesky-consumer = { path = "crates/realfakebluesky/consumer" }
 realfakebluesky-server = { path = "crates/realfakebluesky/server" }
 atrium-api = { workspace = true }
 tokio-util = { workspace = true }
@@ -71,7 +68,6 @@ anyhow = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
-image = { workspace = true }
 dotenv = "0.15"
 
 [dev-dependencies]

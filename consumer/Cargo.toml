@@ -7,10 +7,15 @@ edition = "2021"
 name = "consumer"
 path = "src/main.rs"
 
+[[bin]]
+name = "check_image"
+path = "src/bin/check_image.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 bsky_core = { workspace = true }
 helloworld-consumer = { path = "../crates/helloworld/consumer" }
+image = { workspace = true }
 jetstream = { path = "../crates/jetstream" }
 realfakebluesky-consumer = { path = "../crates/realfakebluesky/consumer" }
 sqlx = { workspace = true }

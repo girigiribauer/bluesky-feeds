@@ -1,0 +1,128 @@
+name: Release server
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "consumer/**"
+      - "crates/jetstream/**"
+      - "crates/*/consumer/**"
+      - "**.md"
+      - "Makefile"
+      - "scripts/**"
+      - ".env.example"
+      - ".github/workflows/release-consumer.yml"
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "consumer/**"
+      - "crates/jetstream/**"
+      - "crates/*/consumer/**"
+      - "**.md"
+      - "Makefile"
+      - "scripts/**"
+      - ".env.example"
+      - ".github/workflows/release-consumer.yml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --verbose
+
+  deploy:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-feeds
+      cancel-in-progress: false
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Docker Buildx のセットアップ
+        uses: docker/setup-buildx-action@v3
+
+      - name: GitHub Container Registry へログイン
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: server のコンテナ設定
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=server-latest,enable={{is_default_branch}}
+            type=sha,prefix=server-sha-
+
+      - name: server の Docker イメージをビルド・プッシュ
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: server
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: VPS へデプロイ
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          ssh -i ~/.ssh/id_rsa -p $SSH_PORT -o StrictHostKeyChecking=no ubuntu@${{ secrets.VPS_IP }} "cd /opt/services/${{ secrets.DOMAIN }} && \
+          docker compose pull app && docker compose up -d app"
+
+      - name: 秘密鍵の削除
+        if: always()
+        run: rm -f ~/.ssh/id_rsa
