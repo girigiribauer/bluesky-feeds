@@ -529,7 +529,7 @@ mod tests {
         LOGS.with(|logs| String::from_utf8(logs.borrow().clone()).unwrap())
     }
 
-    /// 本処理の中で出たログに、アプリ名の印（consumer{feed=アプリ名}）が付くこと
+    /// フィードごとの処理の中で出たログには、どのフィードのログか分かるよう consumer{feed=フィード名} が付くこと
     #[tokio::test]
     async fn test_logs_during_processing_are_tagged_with_app_name() {
         start_capturing_logs();

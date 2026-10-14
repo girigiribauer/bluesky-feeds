@@ -21,13 +21,21 @@ async fn main() -> anyhow::Result<()> {
     let helloworld_db = connect("HELLOWORLD_DB_URL", "sqlite:data/helloworld.db").await?;
     let realfakebluesky_db =
         connect("REALFAKEBLUESKY_DB_URL", "sqlite:data/fakebluesky.db").await?;
+    let silentviews_db = connect("SILENTVIEWS_DB_URL", "sqlite:data/silentviews.db").await?;
     let consumer_db = connect("CONSUMER_DB_URL", "sqlite:data/consumer.db").await?;
+    let silentviews_models = std::env::var("SILENTVIEWS_MODELS_DIR")
+        .unwrap_or_else(|_| "crates/silentviews/consumer/models".to_string());
 
     let apps: Vec<Arc<dyn jetstream::App>> = vec![
         Arc::new(helloworld_consumer::HelloWorld::new(helloworld_db)),
         Arc::new(realfakebluesky_consumer::RealFakeBluesky::new(
             realfakebluesky_db.clone(),
         )),
+        Arc::new(silentviews_consumer::app::SilentViews::new(
+            silentviews_db,
+            std::path::Path::new(&silentviews_models),
+            std::env::var("SILENTVIEWS_CDN_BASE").ok(),
+        )?),
     ];
     for app in &apps {
         app.migrate().await?;

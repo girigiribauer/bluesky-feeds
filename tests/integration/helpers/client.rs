@@ -141,6 +141,11 @@ async fn create_test_state(bluesky_api_base: &str) -> SharedState {
             cid TEXT NOT NULL,
             indexed_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS silentviews_posts (
+            uri TEXT PRIMARY KEY,
+            cid TEXT NOT NULL,
+            indexed_at INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS cache (
             key        TEXT    PRIMARY KEY,
             value      TEXT    NOT NULL,
@@ -164,7 +169,8 @@ async fn create_test_state(bluesky_api_base: &str) -> SharedState {
         auth_password: "dummy".to_string(),
         helloworld_db: db.clone(),
         realfakebluesky_db: db.clone(),
-        oneyearago_db: db,
+        oneyearago_db: db.clone(),
+        silentviews_db: db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             "http://localhost:3000".to_string(),
             "dummy_website_id".to_string(),

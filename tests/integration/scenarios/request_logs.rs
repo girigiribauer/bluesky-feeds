@@ -1,6 +1,6 @@
 use crate::helpers::{auth::TestAuth, client::TestClient, logs::CapturedLogs};
 
-/// フィードを問い合わせたときのログに、そのフィード名の印（request{feed=フィード名}）が付くこと
+/// フィードを問い合わせたときのログには、どのフィードへの問い合わせか分かるよう request{feed=フィード名} が付くこと
 #[tokio::test]
 async fn test_feed_request_log_is_tagged_with_feed_name() {
     let logs = CapturedLogs::start();
@@ -19,7 +19,7 @@ async fn test_feed_request_log_is_tagged_with_feed_name() {
         .contains("request{feed=helloworld}"));
 }
 
-/// Bluesky 本番のように記号を %3A などに置き換えたフィード URI で問い合わせても、ログにフィード名の印が付くこと
+/// Bluesky 本番のように記号を %3A などに置き換えたフィード URI で問い合わせても、ログに request{feed=フィード名} が付くこと
 #[tokio::test]
 async fn test_feed_request_log_is_tagged_when_feed_uri_is_percent_encoded() {
     let logs = CapturedLogs::start();

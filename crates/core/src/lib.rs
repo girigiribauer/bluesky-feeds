@@ -21,6 +21,7 @@ pub enum FeedService {
     Oneyearago,
     Fakebluesky,
     Realbluesky,
+    SilentViews,
 }
 
 impl FeedService {
@@ -32,6 +33,7 @@ impl FeedService {
             "oneyearago" => Some(Self::Oneyearago),
             "fakebluesky" => Some(Self::Fakebluesky),
             "realbluesky" => Some(Self::Realbluesky),
+            "silentviews" => Some(Self::SilentViews),
             _ => None,
         }
     }
@@ -43,6 +45,7 @@ impl FeedService {
             Self::Oneyearago => "oneyearago",
             Self::Fakebluesky => "fakebluesky",
             Self::Realbluesky => "realbluesky",
+            Self::SilentViews => "silentviews",
         }
     }
 }

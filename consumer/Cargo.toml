@@ -17,6 +17,7 @@ bsky_core = { workspace = true }
 helloworld-consumer = { path = "../crates/helloworld/consumer" }
 image = { workspace = true }
 jetstream = { path = "../crates/jetstream" }
+silentviews-consumer = { path = "../crates/silentviews/consumer" }
 realfakebluesky-consumer = { path = "../crates/realfakebluesky/consumer" }
 sqlx = { workspace = true }
 tokio = { workspace = true }

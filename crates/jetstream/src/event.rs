@@ -1,4 +1,4 @@
-use atrium_api::app::bsky::feed::post::{Record, RecordEmbedRefs};
+use atrium_api::app::bsky::feed::post::{Record, RecordEmbedRefs, RecordLabelsRefs};
 use atrium_api::types::Union;
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -43,6 +43,8 @@ pub struct PostRecord {
     pub text: String,
     pub created_at_us: Option<i64>,
     pub embed: Option<PostEmbed>,
+    pub is_reply: bool,
+    pub self_labels: Option<Vec<String>>,
     pub strict: bool,
 }
 
@@ -193,6 +195,15 @@ fn parse_post_record(raw: &RawValue, skips: &mut SkipStats) -> PostRecord {
             text: record.text.clone(),
             created_at_us: Some(record.created_at.as_ref().timestamp_micros()),
             embed: record.embed.clone(),
+            is_reply: record.reply.is_some(),
+            self_labels: record.labels.as_ref().map(|labels| match labels {
+                Union::Refs(RecordLabelsRefs::ComAtprotoLabelDefsSelfLabels(labels)) => labels
+                    .values
+                    .iter()
+                    .map(|label| label.val.clone())
+                    .collect(),
+                Union::Unknown(_) => Vec::new(),
+            }),
             strict: true,
         };
     }
@@ -215,6 +226,23 @@ fn parse_post_record(raw: &RawValue, skips: &mut SkipStats) -> PostRecord {
             .get("embed")
             .cloned()
             .and_then(|embed| serde_json::from_value::<PostEmbed>(embed).ok()),
+        is_reply: value.get("reply").is_some_and(|reply| !reply.is_null()),
+        self_labels: value
+            .get("labels")
+            .filter(|labels| !labels.is_null())
+            .map(|labels| {
+                labels
+                    .get("values")
+                    .and_then(|values| values.as_array())
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(|label| label.get("val").and_then(|val| val.as_str()))
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }),
         strict: false,
     }
 }
@@ -532,6 +560,83 @@ mod tests {
         );
         assert_eq!(parse_created_at_us(""), None);
         assert_eq!(parse_created_at_us("きのう"), None);
+    }
+
+    fn reply_ref() -> Value {
+        let parent = json!({ "uri": format!("at://{DID}/app.bsky.feed.post/{RKEY}"), "cid": CID });
+        json!({ "root": parent, "parent": parent })
+    }
+
+    fn self_labels(values: &[&str]) -> Value {
+        json!({
+            "$type": "com.atproto.label.defs#selfLabels",
+            "values": values.iter().map(|v| json!({ "val": v })).collect::<Vec<_>>(),
+        })
+    }
+
+    /// 返信の投稿は返信として読めること
+    #[test]
+    fn test_parse_reply_is_marked_as_reply() {
+        let event = parse_post(&post(TIME, json!({ "reply": reply_ref() })));
+
+        assert!(event.record.strict);
+        assert!(event.record.is_reply);
+    }
+
+    /// 返信でない投稿は返信として扱わないこと
+    #[test]
+    fn test_parse_top_level_post_is_not_reply() {
+        let event = parse_post(&post(TIME, json!({})));
+
+        assert!(!event.record.is_reply);
+        assert_eq!(event.record.self_labels, None);
+    }
+
+    /// 投稿者が自分で付けた警告ラベル（アダルト・ヌード・生々しい表現など）を読めること
+    #[test]
+    fn test_parse_reads_self_labels() {
+        let event = parse_post(&post(
+            TIME,
+            json!({ "labels": self_labels(&["porn", "graphic-media"]) }),
+        ));
+
+        assert!(event.record.strict);
+        assert_eq!(
+            event.record.self_labels,
+            Some(vec!["porn".to_string(), "graphic-media".to_string()])
+        );
+    }
+
+    /// 規格外の部分がある投稿でも、返信かどうかと警告ラベルは読めること
+    #[test]
+    fn test_parse_loose_record_keeps_reply_and_self_labels() {
+        let json = post(
+            TIME,
+            json!({
+                "langs": ["日本語"],
+                "reply": reply_ref(),
+                "labels": self_labels(&["nudity"]),
+            }),
+        );
+
+        let event = parse_post(&json);
+
+        assert!(!event.record.strict);
+        assert!(event.record.is_reply);
+        assert_eq!(event.record.self_labels, Some(vec!["nudity".to_string()]));
+    }
+
+    /// 知らない書き方の警告ラベルでも、警告ラベルが付いていることは分かること
+    #[test]
+    fn test_parse_unknown_label_format_is_still_labeled() {
+        let labels = json!({
+            "$type": "com.example.futureLabels",
+            "values": [{ "val": "something" }],
+        });
+
+        let event = parse_post(&post(TIME, json!({ "labels": labels })));
+
+        assert!(event.record.self_labels.is_some());
     }
 
     /// どの種類のイベントからもカーソル用の受信時刻を取り出せること

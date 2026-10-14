@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use crate::handlers::{
-    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_realbluesky, handle_todoapp,
-    DidResponse, DidService,
+    handle_fakebluesky, handle_helloworld, handle_oneyearago, handle_realbluesky,
+    handle_silentviews, handle_todoapp, DidResponse, DidService,
 };
 use crate::state::{FeedQuery, SharedState};
 use axum::{
@@ -70,6 +70,7 @@ pub async fn get_feed_skeleton(
         FeedService::Oneyearago => handle_oneyearago(state, headers, params).await,
         FeedService::Fakebluesky => handle_fakebluesky(state, params).await,
         FeedService::Realbluesky => handle_realbluesky(state, params).await,
+        FeedService::SilentViews => handle_silentviews(state, params).await,
     }
 }
 

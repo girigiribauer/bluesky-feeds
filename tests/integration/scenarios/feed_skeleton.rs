@@ -167,3 +167,20 @@ async fn test_get_feed_skeleton_oneyearago_cleanup_trigger() {
         "クリーンアップの実行記録が作成されるべき"
     );
 }
+
+/// Silent Viewsフィードが正常に取得できるか（DB連携確認）
+#[tokio::test]
+async fn test_get_feed_skeleton_silentviews_success() {
+    let client = TestClient::new().await;
+    let auth = TestAuth::new("did:plc:silentviews");
+
+    let (status, body) = client
+        .get_feed_skeleton(
+            "at://did:example:123/app.bsky.feed.generator/silentviews",
+            Some(&auth.header_value()),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["feed"].is_array());
+}

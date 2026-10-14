@@ -1,0 +1,27 @@
+[package]
+name = "silentviews-consumer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = "0.1"
+atrium-api = { workspace = true }
+jetstream = { path = "../../jetstream" }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+vision = { path = "../../vision" }
+
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+image = { workspace = true }
+vision = { path = "../../vision", features = ["testing"] }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true }

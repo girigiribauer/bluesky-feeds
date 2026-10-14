@@ -1,0 +1,12 @@
+[package]
+name = "silentviews-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+sqlx = { workspace = true }
+
+[dev-dependencies]
+silentviews-consumer = { path = "../consumer" }
+tokio = { workspace = true }

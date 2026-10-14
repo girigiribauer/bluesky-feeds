@@ -1,0 +1,7 @@
+frontal_face.jpg
+  https://commons.wikimedia.org/wiki/File:Laurel_Clark,_NASA_photo_portrait_in_blue_suit.jpg
+  Public domain (NASA). Resized to 470x640.
+
+walking_person.jpg
+  https://commons.wikimedia.org/wiki/File:Candid_shot_of_ALB_walking_on_Phoenix_sidewalk_circa_1954.jpg
+  Public domain. Unmodified.

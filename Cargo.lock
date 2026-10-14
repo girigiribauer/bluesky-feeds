@@ -273,6 +273,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "silentviews-server",
  "sqlx",
  "todoapp",
  "tokio",
@@ -293,6 +294,7 @@ dependencies = [
  "image",
  "jetstream",
  "realfakebluesky-consumer",
+ "silentviews-consumer",
  "sqlx",
  "tokio",
  "tracing",
@@ -2583,6 +2585,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "silentviews-consumer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "atrium-api",
+ "chrono",
+ "futures-util",
+ "image",
+ "jetstream",
+ "libc",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "vision",
+]
+
+[[package]]
+name = "silentviews-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "silentviews-consumer",
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3401,6 +3435,14 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vision"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jpeg-decoder",
+]
 
 [[package]]
 name = "want"

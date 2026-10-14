@@ -16,3 +16,8 @@ target/
 *.db-shm
 *.db-wal
 data/
+
+# Silent Views large models
+crates/silentviews/consumer/models/*.part
+crates/silentviews/consumer/models/tinyclip8m*
+crates/silentviews/consumer/models/clip_*

@@ -50,6 +50,11 @@ async fn main() -> anyhow::Result<()> {
     let oneyearago_db = bsky_core::database::connect_database(&oneyearago_db_url).await?;
     oneyearago::cache::migrate(&oneyearago_db).await?;
 
+    let silentviews_db_url = std::env::var("SILENTVIEWS_DB_URL")
+        .unwrap_or_else(|_| "sqlite:data/silentviews.db".to_string());
+    tracing::info!("Connecting to silentviews database: {}", silentviews_db_url);
+    let silentviews_db = bsky_core::database::connect_database(&silentviews_db_url).await?;
+
     let http_client = reqwest::Client::builder()
         .user_agent("BlueskyFeedGenerator/1.0 (girigiribauer.com)")
         .build()
@@ -83,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
         helloworld_db,
         realfakebluesky_db,
         oneyearago_db,
+        silentviews_db,
         umami: bluesky_feeds::analytics::UmamiClient::new(
             std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
             std::env::var("UMAMI_WEBSITE_ID").expect("UMAMI_WEBSITE_ID must be set"),

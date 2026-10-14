@@ -1,0 +1,11 @@
+[package]
+name = "vision"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+testing = []
+
+[dependencies]
+anyhow = { workspace = true }
+jpeg-decoder = "0.3.2"

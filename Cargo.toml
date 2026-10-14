@@ -9,6 +9,9 @@ members = [
     "crates/oneyearago",
     "crates/realfakebluesky/consumer",
     "crates/realfakebluesky/server",
+    "crates/silentviews/consumer",
+    "crates/silentviews/server",
+    "crates/vision",
 ]
 resolver = "2"
 
@@ -61,6 +64,7 @@ helloworld-server = { path = "crates/helloworld/server" }
 todoapp = { path = "crates/todoapp" }
 oneyearago = { path = "crates/oneyearago" }
 realfakebluesky-server = { path = "crates/realfakebluesky/server" }
+silentviews-server = { path = "crates/silentviews/server" }
 atrium-api = { workspace = true }
 tokio-util = { workspace = true }
 futures-util = { workspace = true }
@@ -72,3 +76,12 @@ dotenv = "0.15"
 
 [dev-dependencies]
 base64 = "0.21"
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.silentviews-consumer]
+opt-level = 3
+
+[profile.dev.package.vision]
+opt-level = 3

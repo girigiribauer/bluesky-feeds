@@ -28,6 +28,7 @@ pub struct AppState {
     pub helloworld_db: SqlitePool,
     pub realfakebluesky_db: SqlitePool,
     pub oneyearago_db: SqlitePool,
+    pub silentviews_db: SqlitePool,
     pub umami: crate::analytics::UmamiClient,
 }
 

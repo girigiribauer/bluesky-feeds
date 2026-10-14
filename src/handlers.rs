@@ -4,6 +4,7 @@ pub mod health;
 pub mod helloworld;
 pub mod oneyearago;
 pub mod realfakebluesky;
+pub mod silentviews;
 pub mod todoapp;
 
 pub use common::*;
@@ -12,4 +13,5 @@ pub use health::*;
 pub use helloworld::*;
 pub use oneyearago::*;
 pub use realfakebluesky::*;
+pub use silentviews::*;
 pub use todoapp::*;
