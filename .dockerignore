@@ -4,3 +4,6 @@ target/
 *.md
 README.md
 rust-toolchain.toml
+crates/silentviews/consumer/models/tinyclip8m*
+crates/silentviews/consumer/models/*.onnx
+crates/silentviews/consumer/models/*.part

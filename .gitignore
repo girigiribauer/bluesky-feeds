@@ -20,4 +20,4 @@ data/
 # Silent Views large models
 crates/silentviews/consumer/models/*.part
 crates/silentviews/consumer/models/tinyclip8m*
-crates/silentviews/consumer/models/clip_*
+crates/silentviews/consumer/models/clip_vision.onnx

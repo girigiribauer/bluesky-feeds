@@ -4,8 +4,11 @@ FROM rust:1.99.0-slim-bookworm AS chef
 WORKDIR /build
 RUN cargo install cargo-chef --version 0.1.78 --locked
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev perl make && \
+    apt-get install -y pkg-config libssl-dev perl make cmake g++ git && \
     rm -rf /var/lib/apt/lists/*
+COPY scripts/build-ncnn.sh /tmp/build-ncnn.sh
+RUN sh /tmp/build-ncnn.sh /opt/ncnn
+ENV NCNN_DIR=/opt/ncnn
 
 FROM chef AS planner
 COPY . .
@@ -38,6 +41,8 @@ WORKDIR /usr/local/bin
 FROM runtime AS consumer
 
 COPY --from=builder-consumer /build/target/release/consumer /usr/local/bin/app
+COPY crates/silentviews/consumer/models/*.ncnn.param crates/silentviews/consumer/models/*.ncnn.bin crates/silentviews/consumer/models/clip_meta.json crates/silentviews/consumer/models/clip_text_embeds.json /usr/local/share/silentviews/models/
+ENV SILENTVIEWS_MODELS_DIR=/usr/local/share/silentviews/models
 
 CMD ["/usr/local/bin/app"]
 

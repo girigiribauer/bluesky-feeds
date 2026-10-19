@@ -54,6 +54,20 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
 
+      - name: Cache ncnn
+        id: ncnn-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/ncnn
+          key: ${{ runner.os }}-ncnn-${{ hashFiles('scripts/build-ncnn.sh') }}
+
+      - name: Build ncnn
+        if: steps.ncnn-cache.outputs.cache-hit != 'true'
+        run: sh scripts/build-ncnn.sh ~/ncnn
+
+      - name: Set NCNN_DIR
+        run: echo "NCNN_DIR=$HOME/ncnn" >> "$GITHUB_ENV"
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
