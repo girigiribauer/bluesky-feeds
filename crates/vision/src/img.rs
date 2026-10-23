@@ -347,27 +347,24 @@ pub fn decode(bytes: &[u8]) -> Option<(Image, Image)> {
         jpeg_decoder::PixelFormat::L8 => None,
         _ => return None,
     };
-    let px = d.decode().ok()?;
+    let mut px = d.decode().ok()?;
     let (w, h) = (info.width as usize, info.height as usize);
     let orientation = d.exif_data().and_then(exif_orientation).unwrap_or(1);
+    drop(d);
     let (bgr, gray): (Vec<u8>, Vec<u8>) = match space {
         None => (px.iter().flat_map(|&v| [v, v, v]).collect(), px),
         Some(JpegColor::YCbCr) => {
+            let gray = px.as_chunks::<3>().0.iter().map(|p| p[0]).collect();
             let [cr_r, cb_b, cr_g, cb_g] = ycc_tables();
-            let bgr = px
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .flat_map(|p| {
-                    let (y, cb, cr) = (p[0] as i32, p[1] as usize, p[2] as usize);
-                    [
-                        sat_u8(y + cb_b[cb]),
-                        sat_u8(y + ((cb_g[cb] + cr_g[cr]) >> SCALEBITS)),
-                        sat_u8(y + cr_r[cr]),
-                    ]
-                })
-                .collect();
-            (bgr, px.as_chunks::<3>().0.iter().map(|p| p[0]).collect())
+            for p in px.as_chunks_mut::<3>().0 {
+                let (y, cb, cr) = (p[0] as i32, p[1] as usize, p[2] as usize);
+                *p = [
+                    sat_u8(y + cb_b[cb]),
+                    sat_u8(y + ((cb_g[cb] + cr_g[cr]) >> SCALEBITS)),
+                    sat_u8(y + cr_r[cr]),
+                ];
+            }
+            (px, gray)
         }
         Some(JpegColor::Rgb) => {
             let (r, g, b) = (fix(0.29900), fix(0.58700), fix(0.11400));
@@ -381,14 +378,10 @@ pub fn decode(bytes: &[u8]) -> Option<(Image, Image)> {
                         as u8
                 })
                 .collect();
-            (
-                px.as_chunks::<3>()
-                    .0
-                    .iter()
-                    .flat_map(|p| [p[2], p[1], p[0]])
-                    .collect(),
-                gray,
-            )
+            for p in px.as_chunks_mut::<3>().0 {
+                p.swap(0, 2);
+            }
+            (px, gray)
         }
     };
     let bgr = Image {
@@ -404,7 +397,7 @@ pub fn decode(bytes: &[u8]) -> Option<(Image, Image)> {
         data: gray,
     };
     (bgr.data.len() == w * h * 3 && gray.data.len() == w * h)
-        .then(|| (orient(&bgr, orientation), orient(&gray, orientation)))
+        .then(|| (orient(bgr, orientation), orient(gray, orientation)))
 }
 
 fn exif_orientation(exif: &[u8]) -> Option<u16> {
@@ -436,12 +429,12 @@ fn exif_orientation(exif: &[u8]) -> Option<u16> {
     })
 }
 
-fn orient(src: &Image, orientation: u16) -> Image {
+fn orient(src: Image, orientation: u16) -> Image {
     let (w, h, ch) = (src.w, src.h, src.ch);
     let swap = matches!(orientation, 5..=8);
     let (dw, dh) = if swap { (h, w) } else { (w, h) };
     if !(2..=8).contains(&orientation) {
-        return src.clone();
+        return src;
     }
     let mut out = Image::new(dw, dh, ch);
     for y in 0..dh {

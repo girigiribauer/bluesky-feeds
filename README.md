@@ -68,3 +68,16 @@ make check-image IMAGE=<image_path_or_url>
 ```
 
 出力結果の `Blue Score` が `0.5` (50%) 未満であれば「Fake Bluesky」として採用 (ACCEPTED) されます。
+
+## 使っている外部のモデルと部品
+
+Silent Views フィードの consumer は、次の学習済みモデルと部品を使っています。モデルは ncnn 形式に変換して `crates/silentviews/consumer/models/` に置いています。ライセンスの全文と手を加えた点は [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) にまとめています（consumer の Docker イメージにも同梱）。
+
+| 名前 | 用途 | ライセンス |
+| --- | --- | --- |
+| [TinyCLIP](https://github.com/wkcn/TinyCLIP) (ViT-8M-16-Text-3M-YFCC15M) | 画像と言葉の照らし合わせ | MIT |
+| [PP-OCRv3](https://github.com/opencv/opencv_zoo/tree/main/models/text_detection_ppocr)（opencv_zoo） | 文字探し | Apache-2.0 |
+| [NanoDet](https://github.com/opencv/opencv_zoo/tree/main/models/object_detection_nanodet)（opencv_zoo） | 物探し | Apache-2.0 |
+| [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)（opencv_zoo） | 顔探し | MIT |
+| [U-2-Net](https://github.com/xuebinqin/U-2-Net) u2netp（[rembg](https://github.com/danielgatis/rembg) の ONNX 書き出し） | 目立つ物の切り出し | Apache-2.0（ONNX 書き出しは MIT） |
+| [ncnn](https://github.com/Tencent/ncnn) | モデルの実行 | BSD-3-Clause |

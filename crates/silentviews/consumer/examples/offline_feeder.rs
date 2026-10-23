@@ -125,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
         let events = events.clone();
         tokio::spawn(async move {
             let mut cursor = 0i64;
+            #[allow(clippy::result_large_err)]
             let callback = |req: &Request, resp: Response| {
                 if let Some(q) = req.uri().query() {
                     for kv in q.split('&') {

@@ -25,33 +25,33 @@ fn main() -> anyhow::Result<()> {
             let before = rss();
             let t = Instant::now();
             let load_ms;
-            let peak;
-            match name {
+
+            let peak = match name {
                 "objects" => {
                     let mut m = objects::ObjectDetector::load(models)?;
                     load_ms = t.elapsed().as_millis();
                     m.detect(&bgr)?;
-                    peak = rss();
+                    rss()
                 }
                 "ocr" => {
                     let mut m = ocr::TextDetector::load(models)?;
                     load_ms = t.elapsed().as_millis();
                     m.detect(&bgr)?;
-                    peak = rss();
+                    rss()
                 }
                 "faces" => {
                     let mut m = faces::FaceDetectors::load(models)?;
                     load_ms = t.elapsed().as_millis();
                     m.measure(&bgr)?;
-                    peak = rss();
+                    rss()
                 }
                 _ => {
                     let mut m = clip::ClipScorer::load(models)?;
                     load_ms = t.elapsed().as_millis();
                     m.score(&bgr)?;
-                    peak = rss();
+                    rss()
                 }
-            }
+            };
             println!(
                 "{round}回目 {name:<8} 読み込み {load_ms:>5} ms  前 {before:>4} MB  使用中 {peak:>4} MB  捨てた後 {:>4} MB",
                 rss()

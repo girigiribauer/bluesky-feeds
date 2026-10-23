@@ -42,6 +42,7 @@ FROM runtime AS consumer
 
 COPY --from=builder-consumer /build/target/release/consumer /usr/local/bin/app
 COPY crates/silentviews/consumer/models/*.ncnn.param crates/silentviews/consumer/models/*.ncnn.bin crates/silentviews/consumer/models/clip_meta.json crates/silentviews/consumer/models/clip_text_embeds.json /usr/local/share/silentviews/models/
+COPY THIRD_PARTY_NOTICES /usr/local/share/silentviews/THIRD_PARTY_NOTICES
 ENV SILENTVIEWS_MODELS_DIR=/usr/local/share/silentviews/models
 
 CMD ["/usr/local/bin/app"]

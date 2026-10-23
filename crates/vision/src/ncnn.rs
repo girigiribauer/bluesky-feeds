@@ -56,6 +56,14 @@ impl NcnnModel {
     }
 
     pub fn load(param: &Path, bin: &Path) -> anyhow::Result<Self> {
+        Self::load_with(param, bin, false)
+    }
+
+    pub fn load_bf16(param: &Path, bin: &Path) -> anyhow::Result<Self> {
+        Self::load_with(param, bin, true)
+    }
+
+    fn load_with(param: &Path, bin: &Path, bf16: bool) -> anyhow::Result<Self> {
         let text = std::fs::read_to_string(param)
             .with_context(|| format!("failed to read {}", param.display()))?;
         let outputs = output_count(&text);
@@ -71,8 +79,8 @@ impl NcnnModel {
             ncnn_option_set_use_fp16_packed(opt, 0);
             ncnn_option_set_use_fp16_storage(opt, 0);
             ncnn_option_set_use_fp16_arithmetic(opt, 0);
-            ncnn_option_set_use_bf16_packed(opt, 0);
-            ncnn_option_set_use_bf16_storage(opt, 0);
+            ncnn_option_set_use_bf16_packed(opt, bf16 as c_int);
+            ncnn_option_set_use_bf16_storage(opt, bf16 as c_int);
             let model = Self {
                 net: ncnn_net_create(),
                 opt,
@@ -94,6 +102,26 @@ impl NcnnModel {
     }
 
     pub fn run(&self, input: Vec<f32>, shape: [usize; 3]) -> anyhow::Result<Vec<Output>> {
+        let count = self.outputs;
+        self.with_input(input, shape, |ex| unsafe { extract(ex, count) })
+    }
+
+    pub fn run_output(
+        &self,
+        input: Vec<f32>,
+        shape: [usize; 3],
+        name: &str,
+    ) -> anyhow::Result<Output> {
+        let name = CString::new(name)?;
+        self.with_input(input, shape, |ex| unsafe { extract_one(ex, &name) })
+    }
+
+    fn with_input<T>(
+        &self,
+        input: Vec<f32>,
+        shape: [usize; 3],
+        take: impl FnOnce(Ptr) -> anyhow::Result<T>,
+    ) -> anyhow::Result<T> {
         let [c, h, w] = shape;
         anyhow::ensure!(input.len() == c * h * w, "input size does not match shape");
         let in0 = CString::new("in0")?;
@@ -106,32 +134,37 @@ impl NcnnModel {
             }
             drop(input);
             let ex = ncnn_extractor_create(self.net);
-            let result = extract(ex, &in0, mat, self.outputs);
-            ncnn_extractor_destroy(ex);
+            let given = ncnn_extractor_input(ex, in0.as_ptr(), mat);
             ncnn_mat_destroy(mat);
+            let result = if given == 0 {
+                take(ex)
+            } else {
+                Err(anyhow::anyhow!("failed to set input"))
+            };
+            ncnn_extractor_destroy(ex);
             result
         }
     }
 }
 
-unsafe fn extract(ex: Ptr, in0: &CString, mat: Ptr, count: usize) -> anyhow::Result<Vec<Output>> {
-    anyhow::ensure!(
-        ncnn_extractor_input(ex, in0.as_ptr(), mat) == 0,
-        "failed to set input"
-    );
+unsafe fn extract(ex: Ptr, count: usize) -> anyhow::Result<Vec<Output>> {
     let mut outputs = Vec::with_capacity(count);
     for k in 0..count {
-        let name = CString::new(format!("out{k}"))?;
-        let mut out: Ptr = std::ptr::null_mut();
-        anyhow::ensure!(
-            ncnn_extractor_extract(ex, name.as_ptr(), &mut out) == 0 && !out.is_null(),
-            "failed to extract out{k}"
-        );
-        let output = read_output(out);
-        ncnn_mat_destroy(out);
-        outputs.push(output?);
+        outputs.push(extract_one(ex, &CString::new(format!("out{k}"))?)?);
     }
     Ok(outputs)
+}
+
+unsafe fn extract_one(ex: Ptr, name: &CString) -> anyhow::Result<Output> {
+    let mut out: Ptr = std::ptr::null_mut();
+    anyhow::ensure!(
+        ncnn_extractor_extract(ex, name.as_ptr(), &mut out) == 0 && !out.is_null(),
+        "failed to extract {}",
+        name.to_string_lossy()
+    );
+    let output = read_output(out);
+    ncnn_mat_destroy(out);
+    output
 }
 
 unsafe fn read_output(mat: Ptr) -> anyhow::Result<Output> {
@@ -243,6 +276,64 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
 
         assert!(result.is_err());
+    }
+
+    /// 名前を指定すると、その出力だけを取り出せること
+    #[test]
+    fn test_run_output_returns_the_named_output() {
+        let dir = temp_dir("named");
+        let param = write(
+            &dir,
+            "two.param",
+            "7767517\n3 3\nInput in0 0 1 in0\nNoop a 1 1 in0 out0\nNoop b 1 1 out0 out1\n",
+        );
+        let bin = write(&dir, "two.bin", "");
+        let model = NcnnModel::load(&param, &bin).unwrap();
+        let input: Vec<f32> = (0..6).map(|v| v as f32).collect();
+
+        let out = model.run_output(input.clone(), [1, 2, 3], "out1").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(out.shape, vec![1, 2, 3]);
+        assert_eq!(out.data, input);
+    }
+
+    /// モデルにない名前の出力を指定したときは、失敗にすること
+    #[test]
+    fn test_run_output_fails_for_unknown_name() {
+        let dir = temp_dir("unknown");
+        let param = write(
+            &dir,
+            "id.param",
+            "7767517\n2 2\nInput in0 0 1 in0\nNoop noop 1 1 in0 out0\n",
+        );
+        let bin = write(&dir, "id.bin", "");
+        let model = NcnnModel::load(&param, &bin).unwrap();
+
+        let result = model.run_output(vec![0.0; 6], [1, 2, 3], "out9");
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert!(result.is_err());
+    }
+
+    /// bf16 で読み込んでも、bf16 でちょうど表せる値はそのまま形も含めて出てくること
+    #[test]
+    fn test_bf16_model_keeps_exactly_representable_values() {
+        let dir = temp_dir("bf16");
+        let param = write(
+            &dir,
+            "id.param",
+            "7767517\n2 2\nInput in0 0 1 in0\nNoop noop 1 1 in0 out0\n",
+        );
+        let bin = write(&dir, "id.bin", "");
+        let model = NcnnModel::load_bf16(&param, &bin).unwrap();
+        let input: Vec<f32> = (0..24).map(|v| v as f32 * 0.5).collect();
+
+        let out = model.run_output(input.clone(), [2, 3, 4], "out0").unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(out.shape, vec![2, 3, 4]);
+        assert_eq!(out.data, input);
     }
 
     /// 存在しないモデルのファイルは、読み込みを失敗にすること

@@ -85,6 +85,9 @@ case "$target" in
     fetch "$work/face_detection_yunet_2023mar.onnx" \
       "$zoo/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx" \
       8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+    fetch "$work/u2netp.onnx" \
+      "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx" \
+      309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
     convert text_detection_ppocrv3_2023may '[1,3,736,736]' \
       c2a7ef325df25061668bae79a0431a4b4d10116c116e7de98dea52f821a8d016 \
       fefa67edb4af3b7fbff0802b9250956d012e77534de60183950e83c5b9a62649
@@ -94,6 +97,9 @@ case "$target" in
     convert face_detection_yunet_2023mar '[1,3,640,640]' \
       8d4c649e606d816a2ec69851070bbaf6d8abfd1e983e48a779fc84c9fcf1d014 \
       8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9
+    convert u2netp '[1,3,320,320]' \
+      faf6e6aa63b8934e7077f4100deeac5f590f64931da03b0000133e5895d1dc42 \
+      7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908
     ;;
   *)
     echo "usage: convert-silentviews-ncnn.sh [clip|small]" >&2

@@ -60,7 +60,6 @@ pub enum Reason {
     Unmeasured,
     Elongated,
     TooSmall,
-    Blurry,
     LineArt,
     Illustration,
     FlatColors,
@@ -86,6 +85,7 @@ pub enum Reason {
     ToonTile,
     ThroughWindow,
     EdgeText,
+    ForegroundObject,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,7 +158,6 @@ pub fn judge_light(f: &LightFeatures, max_side: i32) -> Option<Reason> {
     first_hit([
         (Reason::Elongated, f.aspect >= MAX_ASPECT),
         (Reason::TooSmall, max_side < 400),
-        (Reason::Blurry, f.blur < 100.0),
         (Reason::LineArt, f.blur > 12000.0),
         (
             Reason::Illustration,
@@ -279,6 +278,13 @@ pub fn judge_tiles(toon_tile_max: f64) -> Option<Reason> {
     (toon_tile_max >= 0.25).then_some(Reason::ToonTile)
 }
 
+pub fn judge_foreground(lower_object_share: f64) -> Option<Reason> {
+    if lower_object_share.is_nan() {
+        return Some(Reason::Unmeasured);
+    }
+    (lower_object_share >= 0.025).then_some(Reason::ForegroundObject)
+}
+
 fn too_few_nature_colors(f: &LightFeatures) -> bool {
     let nat = f.green + f.blue;
     nat < 0.2 || !(nat >= 0.25 || nat + f.earth >= 0.4)
@@ -383,22 +389,36 @@ pub(crate) mod tests {
         assert_eq!(judge_late(&passing_late()), None);
     }
 
-    /// 画質のルール：縦横比3以上・長辺400px未満・くっきり度100未満（ブレ）・12000超（漫画の線）を弾き、基準の手前は通すこと
+    /// 画質のルール：縦横比3以上を弾き、基準の手前は通すこと
     #[test]
-    fn test_image_quality_rules() {
+    fn test_elongated_rule() {
         assert_eq!(with(|e| e.light.aspect = 3.0), Some(Reason::Elongated));
         assert_eq!(with(|e| e.light.aspect = 2.99), None);
+    }
+
+    /// 画質のルール：長辺400px未満を弾き、基準の手前は通すこと
+    #[test]
+    fn test_too_small_rule() {
         assert_eq!(with(|e| e.max_side = 399), Some(Reason::TooSmall));
         assert_eq!(with(|e| e.max_side = 400), None);
-        assert_eq!(with(|e| e.light.blur = 99.9), Some(Reason::Blurry));
-        assert_eq!(with(|e| e.light.blur = 100.0), None);
+    }
+
+    /// 画質のルール：くっきり度12000超（漫画の線）を弾き、基準の手前は通すこと
+    #[test]
+    fn test_line_art_rule() {
         assert_eq!(with(|e| e.light.blur = 12000.1), Some(Reason::LineArt));
         assert_eq!(with(|e| e.light.blur = 12000.0), None);
     }
 
-    /// 作り物のルール：平らな塗りが12%以上かつ空を除いても5%以上（イラスト）、上位5色が35%以上（のっぺり）、左右対称度0.6以上を弾くこと
+    /// くっきり度が低い（ぼやけている）だけでは弾かないこと（ぼやけていても実害がなく、模様の少ない良い空や海の写真を落としていたため）
     #[test]
-    fn test_artificial_image_rules() {
+    fn test_blur_alone_is_not_rejected() {
+        assert_eq!(with(|e| e.light.blur = 0.0), None);
+    }
+
+    /// 作り物のルール：平らな塗りが12%以上かつ空を除いても5%以上（イラスト）を弾くこと
+    #[test]
+    fn test_illustration_rule() {
         let illust = |a: f64, b: f64| {
             with(move |e| {
                 e.light.dead_flat = a;
@@ -408,8 +428,18 @@ pub(crate) mod tests {
         assert_eq!(illust(0.12, 0.05), Some(Reason::Illustration));
         assert_eq!(illust(0.12, 0.049), None);
         assert_eq!(illust(0.119, 0.5), None);
+    }
+
+    /// 作り物のルール：上位5色が35%以上（のっぺり）を弾くこと
+    #[test]
+    fn test_flat_colors_rule() {
         assert_eq!(with(|e| e.light.flat = 0.35), Some(Reason::FlatColors));
         assert_eq!(with(|e| e.light.flat = 0.349), None);
+    }
+
+    /// 作り物のルール：左右対称度0.6以上を弾くこと
+    #[test]
+    fn test_mirror_rule() {
         assert_eq!(with(|e| e.light.mirror = 0.6), Some(Reason::Mirror));
         assert_eq!(with(|e| e.light.mirror = 0.599), None);
     }
@@ -421,19 +451,24 @@ pub(crate) mod tests {
         assert_eq!(with(|e| e.ocr.ocr_edge = 0), None);
     }
 
-    /// 文字のルール：横長の塊の広さ1.1%以上、または文字検出で横長の列1つ以上か塊3つ以上を弾くこと
+    /// 文字のルール：横長の塊の広さ1.1%以上を弾くこと
     #[test]
-    fn test_text_rules() {
+    fn test_text_area_rule() {
         assert_eq!(with(|e| e.light.text_area = 0.011), Some(Reason::Text));
         assert_eq!(with(|e| e.light.text_area = 0.0109), None);
+    }
+
+    /// 文字のルール：文字検出で横長の列1つ以上か塊3つ以上を弾くこと
+    #[test]
+    fn test_text_ocr_rule() {
         assert_eq!(with(|e| e.ocr.ocr_lines = 1), Some(Reason::TextOcr));
         assert_eq!(with(|e| e.ocr.ocr_n = 3), Some(Reason::TextOcr));
         assert_eq!(with(|e| e.ocr.ocr_n = 2), None);
     }
 
-    /// 構図のルール：空が5%未満でなめらかな部分が30%未満のときの近景の塊35%以上（試作は40%。読み込みの差し替え後に試作との一致が最多になる値）、真ん中の近景が左右より30ポイント以上多いときを弾くこと
+    /// 構図のルール：空が5%未満でなめらかな部分が30%未満のときの近景の塊35%以上（試作は40%。読み込みの差し替え後に試作との一致が最多になる値）を弾くこと
     #[test]
-    fn test_composition_rules() {
+    fn test_near_blob_rule() {
         let near = |blob: f64, sky: f64, smooth: f64| {
             with(move |e| {
                 e.light.near_blob = blob;
@@ -445,6 +480,11 @@ pub(crate) mod tests {
         assert_eq!(near(0.349, 0.0, 0.0), None);
         assert_eq!(near(0.35, 0.05, 0.0), None);
         assert_eq!(near(0.35, 0.0, 0.3), None);
+    }
+
+    /// 構図のルール：真ん中の近景が左右より30ポイント以上多いときを弾くこと
+    #[test]
+    fn test_center_subject_rule() {
         let center = |c: f64, s: f64| {
             with(move |e| {
                 e.light.center_near = c;
@@ -643,11 +683,16 @@ pub(crate) mod tests {
         );
     }
 
-    /// 人工物のルール：舗装が2割以上、直角5個以上、縦の線20本以上、縦横の線50本以上かつ縦8本以上、長い直線（縦と斜めで6本以上か横7本以上）を弾くこと
+    /// 人工物のルール：舗装が2割以上を弾くこと
     #[test]
-    fn test_manmade_rules() {
+    fn test_pavement_rule() {
         assert_eq!(with(|e| e.light.ground_gray = 0.2), Some(Reason::Pavement));
         assert_eq!(with(|e| e.light.ground_gray = 0.199), None);
+    }
+
+    /// 人工物のルール：直角5個以上、縦の線20本以上、縦横の線50本以上かつ縦8本以上、長い直線（縦と斜めで6本以上か横7本以上）を弾くこと
+    #[test]
+    fn test_manmade_lines_rule() {
         assert_eq!(with(|e| e.light.corners = 5), Some(Reason::Manmade));
         assert_eq!(with(|e| e.light.corners = 4), None);
         assert_eq!(with(|e| e.light.seg_v = 20), Some(Reason::Manmade));
@@ -674,11 +719,16 @@ pub(crate) mod tests {
         assert_eq!(lines(0, 0, 6), None);
     }
 
-    /// 色と模様のルール：輪郭がほぼ無い（0.5%未満）画像と、緑＋青が20%未満か、25%未満で土の色を足しても40%未満の画像を弾くこと（緑＋青がちょうど20%で土の色が多ければ通す）
+    /// 色と模様のルール：輪郭がほぼ無い（0.5%未満）画像を弾くこと
     #[test]
-    fn test_color_and_texture_rules() {
+    fn test_no_texture_rule() {
         assert_eq!(with(|e| e.light.edge = 0.0049), Some(Reason::NoTexture));
         assert_eq!(with(|e| e.light.edge = 0.005), None);
+    }
+
+    /// 色と模様のルール：緑＋青が20%未満か、25%未満で土の色を足しても40%未満の画像を弾くこと（緑＋青がちょうど20%で土の色が多ければ通す）
+    #[test]
+    fn test_nature_colors_rule() {
         let colors = |g: f64, b: f64, earth: f64| {
             with(move |e| {
                 e.light.green = g;
@@ -741,9 +791,9 @@ pub(crate) mod tests {
         );
     }
 
-    /// 距離のルール：模様の粗さ0.89以上（近すぎる。試作は0.9。読み込みの差し替え後に試作との一致が最多になる値）と、上部のなめらかさ0.1未満のときの線の密度4.5以上（近すぎる・線）を弾くこと
+    /// 距離のルール：模様の粗さ0.89以上（近すぎる。試作は0.9。読み込みの差し替え後に試作との一致が最多になる値）を弾くこと
     #[test]
-    fn test_distance_rules() {
+    fn test_too_close_rule() {
         assert_eq!(late_with(|l| l.near.rt_min = 0.89), Some(Reason::TooClose));
         assert_eq!(late_with(|l| l.near.rt_min = 0.889), None);
         assert_eq!(
@@ -753,6 +803,11 @@ pub(crate) mod tests {
             }),
             Some(Reason::TooClose)
         );
+    }
+
+    /// 距離のルール：上部のなめらかさ0.1未満のときの線の密度4.5以上（近すぎる・線）を弾くこと
+    #[test]
+    fn test_too_close_lines_rule() {
         let lines = |ln: f64, top: f64| {
             late_with(move |l| {
                 l.near.ln_count = Some(ln);
@@ -820,11 +875,11 @@ pub(crate) mod tests {
     fn test_light_rule_wins_over_unmeasured_heavy_values() {
         assert_eq!(
             with(|e| {
-                e.light.blur = 0.0;
+                e.light.aspect = 3.0;
                 e.faces.yn_max_area = f64::NAN;
                 e.manmade_p = f64::NAN
             }),
-            Some(Reason::Blurry)
+            Some(Reason::Elongated)
         );
     }
 
@@ -940,11 +995,24 @@ pub(crate) mod tests {
         assert_eq!(judge_tiles(f64::NAN), Some(Reason::Unmeasured));
     }
 
-    /// CLIP のルール：アニメ調の割合0.294以上、庭・見下ろしの割合0.7以上を弾くこと（アニメ調は TinyCLIP 8M で試作との一致が最多になる値、試作の MobileCLIP では0.5。庭・見下ろしは「少し遠景であること」の方針で、木の幹や茂みの大写しを落とすため試作由来の0.884から下げた）
+    /// 画面の下半分にまとまって目立つ物の広さが合計2.5%以上なら弾き、測れなければ「未測定」にすること（景色の手前に置いたぬいぐるみや物を捕まえるため。通過した良い写真の最大1.95%と、すり抜けたぬいの最小2.91%の間をとった値。手前の岩場や桟橋のような良い写真も少し落ちるが、安全な方を優先する方針）
     #[test]
-    fn test_clip_rules() {
+    fn test_foreground_rule() {
+        assert_eq!(judge_foreground(0.025), Some(Reason::ForegroundObject));
+        assert_eq!(judge_foreground(0.0249), None);
+        assert_eq!(judge_foreground(f64::NAN), Some(Reason::Unmeasured));
+    }
+
+    /// CLIP のルール：アニメ調の割合0.294以上を弾くこと（アニメ調は TinyCLIP 8M で試作との一致が最多になる値、試作の MobileCLIP では0.5）
+    #[test]
+    fn test_toon_rule() {
         assert_eq!(late_with(|l| l.clip.toon_p = 0.294), Some(Reason::Toon));
         assert_eq!(late_with(|l| l.clip.toon_p = 0.2939), None);
+    }
+
+    /// CLIP のルール：庭・見下ろしの割合0.7以上を弾くこと（庭・見下ろしは「少し遠景であること」の方針で、木の幹や茂みの大写しを落とすため試作由来の0.884から下げた）
+    #[test]
+    fn test_garden_rule() {
         assert_eq!(
             late_with(|l| l.clip.close_p = 0.7),
             Some(Reason::GardenOrLookingDown)

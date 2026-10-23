@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use crate::judge::{
-    judge_faces, judge_late, judge_light, judge_objects, judge_ocr, judge_scene, judge_tiles, Late,
-    Reason,
+    judge_faces, judge_foreground, judge_late, judge_light, judge_objects, judge_ocr, judge_scene,
+    judge_tiles, Late, Reason,
 };
 use crate::stage1::{self, Stage1Verdict};
 use crate::stage2::clip::{Clip, ClipScorer};
 use crate::stage2::faces::FaceDetectors;
+use crate::stage2::foreground::ForegroundDetector;
 use crate::stage2::objects::ObjectDetector;
 use crate::stage2::ocr::TextDetector;
 use crate::stage2::{depth, measure_light, near};
@@ -34,6 +35,7 @@ impl Models {
         drop(ObjectDetector::load(models_dir)?);
         drop(TextDetector::load(models_dir)?);
         drop(ClipScorer::load(models_dir)?);
+        drop(ForegroundDetector::load(models_dir)?);
         release_memory();
         Ok(Self {
             dir: models_dir.to_path_buf(),
@@ -54,33 +56,33 @@ pub fn stage1(smalls: &[Vec<u8>]) -> Result<(), Rejection> {
 }
 
 pub fn stage2(models: &Models, larges: &[Vec<u8>]) -> Result<(), Rejection> {
-    let mut opened = Vec::with_capacity(larges.len());
     for bytes in larges {
-        opened.push(open_large(bytes)?);
+        drop(open_large(bytes)?);
     }
+    let open = |i: usize| open_large(&larges[i]).ok();
     let clips = std::cell::RefCell::new(vec![None; larges.len()]);
     let verdict = judge_all(
         larges.len(),
         |i| {
-            judge_early_lazily(
-                &models.dir,
-                &opened[i].0,
-                &opened[i].1,
-                &mut clips.borrow_mut()[i],
-            )
+            let Some((bgr, gray)) = open(i) else {
+                return Some(Reason::Unmeasured);
+            };
+            judge_early_lazily(&models.dir, &bgr, &gray, &mut clips.borrow_mut()[i])
         },
         |i| {
+            let (bgr, gray) = open(i)?;
             let clip = clips.borrow_mut()[i].take();
-            measure_late(&models.dir, &opened[i].0, &opened[i].1, clip)
+            measure_late(&models.dir, &bgr, &gray, clip)
         },
         |i| {
-            use_model(ClipScorer::load(&models.dir), |m| {
-                m.tile_toon_max(&opened[i].0)
-            })
-            .ok()
+            let (bgr, _) = open(i)?;
+            use_model(ClipScorer::load(&models.dir), |m| m.tile_toon_max(&bgr)).ok()
+        },
+        |i| {
+            let (bgr, _) = open(i)?;
+            use_model(ForegroundDetector::load(&models.dir), |m| m.measure(&bgr)).ok()
         },
     );
-    drop(opened);
     release_memory();
     verdict
 }
@@ -90,6 +92,7 @@ fn judge_all(
     mut early: impl FnMut(usize) -> Option<Reason>,
     mut late: impl FnMut(usize) -> Option<Late>,
     mut tiles: impl FnMut(usize) -> Option<f64>,
+    mut foreground: impl FnMut(usize) -> Option<f64>,
 ) -> Result<(), Rejection> {
     let unmeasured = Rejection::Stage2(Reason::Unmeasured);
     for i in 0..count {
@@ -104,6 +107,11 @@ fn judge_all(
     }
     for i in 0..count {
         if let Some(reason) = judge_tiles(tiles(i).ok_or(unmeasured)?) {
+            return Err(Rejection::Stage2(reason));
+        }
+    }
+    for i in 0..count {
+        if let Some(reason) = judge_foreground(foreground(i).ok_or(unmeasured)?) {
             return Err(Rejection::Stage2(reason));
         }
     }
@@ -229,7 +237,7 @@ mod tests {
 
         assert_eq!(
             stage1(&[textured(), flat]),
-            Err(Rejection::Stage1(Stage1Verdict::Blurry))
+            Err(Rejection::Stage1(Stage1Verdict::Illustration))
         );
     }
 
@@ -309,6 +317,7 @@ mod tests {
             |_| early_with(|_| {}),
             |_| Some(late_with(|_| {})),
             |_| Some(0.0),
+            |_| Some(0.0),
         );
 
         assert_eq!(result, Ok(()));
@@ -332,6 +341,7 @@ mod tests {
                 Some(late_with(|_| {}))
             },
             |_| Some(0.0),
+            |_| Some(0.0),
         );
 
         assert_eq!(result, Err(Rejection::Stage2(Reason::FaceYunet)));
@@ -352,6 +362,7 @@ mod tests {
                 }))
             },
             |_| Some(0.0),
+            |_| Some(0.0),
         );
 
         assert_eq!(result, Err(Rejection::Stage2(Reason::Toon)));
@@ -371,11 +382,13 @@ mod tests {
             },
             |_| Some(late_with(|_| {})),
             |_| Some(0.0),
+            |_| Some(0.0),
         );
         let late_fail = judge_all(
             2,
             |_| early_with(|_| {}),
             |i| (i == 0).then(|| late_with(|_| {})),
+            |_| Some(0.0),
             |_| Some(0.0),
         );
         let tiles_fail = judge_all(
@@ -383,6 +396,7 @@ mod tests {
             |_| early_with(|_| {}),
             |_| Some(late_with(|_| {})),
             |i| (i == 0).then_some(0.0),
+            |_| Some(0.0),
         );
 
         assert_eq!(early_fail, Err(Rejection::Stage2(Reason::Unmeasured)));
@@ -408,6 +422,7 @@ mod tests {
                 tile_calls += 1;
                 Some(0.0)
             },
+            |_| Some(0.0),
         );
 
         assert_eq!(result, Err(Rejection::Stage2(Reason::Toon)));
@@ -422,9 +437,57 @@ mod tests {
             |_| early_with(|_| {}),
             |_| Some(late_with(|_| {})),
             |i| Some(if i == 1 { 0.9 } else { 0.0 }),
+            |_| Some(0.0),
         );
 
         assert_eq!(result, Err(Rejection::Stage2(Reason::ToonTile)));
+    }
+
+    /// マスの判定で1枚でも弾かれたら、手前の物の判定をせずに投稿ごと弾くこと（手前の物の判定は目立つ物を切り出すモデルを動かして重いため、最後に回す）
+    #[test]
+    fn test_judge_all_stops_before_foreground_when_tiles_reject() {
+        let mut foreground_calls = 0;
+        let result = judge_all(
+            2,
+            |_| early_with(|_| {}),
+            |_| Some(late_with(|_| {})),
+            |i| Some(if i == 1 { 0.9 } else { 0.0 }),
+            |_| {
+                foreground_calls += 1;
+                Some(0.0)
+            },
+        );
+
+        assert_eq!(result, Err(Rejection::Stage2(Reason::ToonTile)));
+        assert_eq!(foreground_calls, 0);
+    }
+
+    /// ほかを全部通っても、手前の物の判定で1枚でも弾かれたら投稿ごと弾くこと
+    #[test]
+    fn test_judge_all_rejects_when_foreground_rejects_any_image() {
+        let result = judge_all(
+            2,
+            |_| early_with(|_| {}),
+            |_| Some(late_with(|_| {})),
+            |_| Some(0.0),
+            |i| Some(if i == 1 { 0.1 } else { 0.0 }),
+        );
+
+        assert_eq!(result, Err(Rejection::Stage2(Reason::ForegroundObject)));
+    }
+
+    /// 手前の物を測れなかった画像があれば、「未測定」として投稿ごと弾くこと
+    #[test]
+    fn test_judge_all_rejects_unmeasured_foreground() {
+        let result = judge_all(
+            2,
+            |_| early_with(|_| {}),
+            |_| Some(late_with(|_| {})),
+            |_| Some(0.0),
+            |i| (i == 0).then_some(0.0),
+        );
+
+        assert_eq!(result, Err(Rejection::Stage2(Reason::Unmeasured)));
     }
 
     /// 人の写った写真は、後半に進まず2段目の前半で弾くこと（この写真は、上半身より先に「主役あり」で当てはまる）

@@ -49,23 +49,30 @@ pub fn reflect101(i: isize, len: usize) -> usize {
 pub fn box_mean(src: &Plane, kw: usize, kh: usize) -> Plane {
     let (w, h) = (src.w, src.h);
     let (ax, ay) = ((kw / 2) as isize, (kh / 2) as isize);
-    let mut rows = vec![0f64; w * h];
-    for y in 0..h {
-        for x in 0..w {
-            let mut s = 0f64;
-            for k in 0..kw as isize {
-                s += src.at(reflect101(x as isize - ax + k, w), y) as f64;
-            }
-            rows[y * w + x] = s;
-        }
-    }
+    let slots = kh.max(1);
+    let mut rows = vec![0f64; slots * w];
+    let mut held = vec![usize::MAX; slots];
     let scale = 1.0 / (kw * kh) as f64;
     let mut out = Plane::new(w, h);
     for y in 0..h {
+        for k in 0..kh as isize {
+            let r = reflect101(y as isize - ay + k, h);
+            let slot = r % slots;
+            if held[slot] != r {
+                for x in 0..w {
+                    let mut s = 0f64;
+                    for j in 0..kw as isize {
+                        s += src.at(reflect101(x as isize - ax + j, w), r) as f64;
+                    }
+                    rows[slot * w + x] = s;
+                }
+                held[slot] = r;
+            }
+        }
         for x in 0..w {
             let mut s = 0f64;
             for k in 0..kh as isize {
-                s += rows[reflect101(y as isize - ay + k, h) * w + x];
+                s += rows[reflect101(y as isize - ay + k, h) % slots * w + x];
             }
             out.data[y * w + x] = (s * scale) as f32;
         }

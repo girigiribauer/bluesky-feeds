@@ -4,6 +4,7 @@ pub mod depth;
 pub mod extra;
 pub mod faces;
 pub mod flat;
+pub mod foreground;
 pub mod manmade;
 pub mod near;
 pub mod objects;

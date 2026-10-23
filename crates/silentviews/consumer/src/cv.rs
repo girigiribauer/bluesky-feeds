@@ -143,8 +143,8 @@ pub mod testing {
                 .wrapping_mul(4164903690)
                 .wrapping_add(s >> 32)
         };
-        let r = 3.442620f32;
-        let rng_flt = 2.3283064365386962890625e-10f32;
+        let r = 3.442_62_f32;
+        let rng_flt = 2.328_306_4e-10_f32;
         let mut st = if seed == 0 { 0xffffffff } else { seed };
         let mut out = Vec::with_capacity(len);
         for _ in 0..len {
@@ -247,7 +247,9 @@ pub mod testing {
     pub fn jpeg(img: &Image) -> Vec<u8> {
         let rgb: Vec<u8> = img
             .data
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|p| [p[2], p[1], p[0]])
             .collect();
         let mut out = Vec::new();
@@ -271,7 +273,9 @@ mod tests {
     use super::testing::solid;
     use super::*;
 
-    const NOISE_CASES: [(i32, i32, (f64, f64, f64), f64, u64); 20] = [
+    type NoiseCase = (i32, i32, (f64, f64, f64), f64, u64);
+
+    const NOISE_CASES: [NoiseCase; 20] = [
         (128, 128, (60.0, 140.0, 60.0), 25.0, 31),
         (256, 128, (60.0, 120.0, 60.0), 40.0, 12),
         (256, 256, (100.0, 100.0, 100.0), 40.0, 5),

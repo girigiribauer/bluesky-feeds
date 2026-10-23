@@ -9,24 +9,30 @@ pub struct Flat {
 }
 
 pub fn measure(bgr: &Image, gray_decoded: &Image) -> Flat {
-    let gray = cv::fit(gray_decoded, 768, false);
-    let (mean, std) = local_mean_std(&gray);
-    let smooth: Vec<bool> = mean
-        .iter()
-        .zip(&std)
-        .map(|(&m, &s)| s < 4.0 && m > 12.0 && m < 243.0)
-        .collect();
-    let smooth_count = smooth.iter().filter(|&&s| s).count();
-    let smooth_share = smooth_count as f64 / smooth.len() as f64;
-    let dead_flat = if smooth_count < 100 {
-        -1.0
-    } else {
-        dead_share(&smooth, &std, smooth_count)
+    let (smooth_share, dead_flat) = {
+        let (mean, std) = local_mean_std(&cv::fit(gray_decoded, 768, false));
+        let smooth: Vec<bool> = mean
+            .iter()
+            .zip(&std)
+            .map(|(&m, &s)| s < 4.0 && m > 12.0 && m < 243.0)
+            .collect();
+        drop(mean);
+        let smooth_count = smooth.iter().filter(|&&s| s).count();
+        let smooth_share = smooth_count as f64 / smooth.len() as f64;
+        let dead_flat = if smooth_count < 100 {
+            -1.0
+        } else {
+            dead_share(&smooth, &std, smooth_count)
+        };
+        (smooth_share, dead_flat)
     };
 
     let small = cv::fit(bgr, 768, false);
-    let (mean, std) = local_mean_std(&img::gray(&small));
+    let gray = img::gray(&small);
     let hsv_img = img::hsv(&small);
+    drop(small);
+    let (mean, std) = local_mean_std(&gray);
+    drop(gray);
     let smooth_ns: Vec<bool> = mean
         .iter()
         .zip(&std)
@@ -38,6 +44,7 @@ pub fn measure(bgr: &Image, gray_decoded: &Image) -> Flat {
             s < 4.0 && m > 12.0 && m < 243.0 && !skyish
         })
         .collect();
+    drop((mean, hsv_img));
     let count_ns = smooth_ns.iter().filter(|&&s| s).count();
     let dead_flat_ns = if count_ns < 100 {
         0.0
@@ -60,12 +67,13 @@ fn dead_share(mask: &[bool], std: &[f32], count: usize) -> f64 {
 fn local_mean_std(gray: &Image) -> (Vec<f32>, Vec<f32>) {
     let g = cv::plane(gray);
     let mean = filter::box_mean(&g, 7, 7).data;
-    let sq = filter::box_mean(&filter::square(&g), 7, 7).data;
-    let std = mean
-        .iter()
-        .zip(&sq)
-        .map(|(&m, &s)| (s - m * m).max(0.0).sqrt())
-        .collect();
+    let squared = filter::square(&g);
+    drop(g);
+    let mut std = filter::box_mean(&squared, 7, 7).data;
+    drop(squared);
+    for (s, &m) in std.iter_mut().zip(&mean) {
+        *s = (*s - m * m).max(0.0).sqrt();
+    }
     (mean, std)
 }
 

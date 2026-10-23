@@ -51,7 +51,7 @@ fn regions() {
             head = line.to_string();
         }
     }
-    list.sort_by(|a, b| b.0.cmp(&a.0));
+    list.sort_by_key(|item| std::cmp::Reverse(item.0));
     for (kb, head) in list.iter().take(10) {
         println!("{:>6} KB  {head}", kb);
     }

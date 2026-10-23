@@ -18,7 +18,6 @@ pub struct Stage1Features {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage1Verdict {
     Pass,
-    Blurry,
     Illustration,
     FlatColors,
     TooFewNatureColors,
@@ -26,9 +25,7 @@ pub enum Stage1Verdict {
 }
 
 pub fn judge(f: &Stage1Features) -> Stage1Verdict {
-    if f.s1_lap < 150.0 {
-        Stage1Verdict::Blurry
-    } else if f.s1_dead >= 0.05 {
+    if f.s1_dead >= 0.05 {
         Stage1Verdict::Illustration
     } else if f.s1_top5 >= 0.40 {
         Stage1Verdict::FlatColors
@@ -184,16 +181,11 @@ mod tests {
         assert_eq!(judge(&passing()), Stage1Verdict::Pass);
     }
 
-    /// 輪郭のくっきり度（輪郭がどれだけはっきりしているか）が 150 未満の画像は、ブレているとして弾くこと
+    /// 輪郭のくっきり度が低い（ぼやけている）だけでは弾かないこと（ぼやけていても実害がなく、模様の少ない良い空や海の写真を落としていたため）
     #[test]
-    fn test_blurry_is_rejected() {
+    fn test_blur_alone_is_not_rejected() {
         let f = Stage1Features {
-            s1_lap: 149.9,
-            ..passing()
-        };
-        assert_eq!(judge(&f), Stage1Verdict::Blurry);
-        let f = Stage1Features {
-            s1_lap: 150.0,
+            s1_lap: 0.0,
             ..passing()
         };
         assert_eq!(judge(&f), Stage1Verdict::Pass);
@@ -252,11 +244,10 @@ mod tests {
         }
     }
 
-    /// 当てはまる条件が複数あるときは、試作と同じくブレ→イラスト→ベタ塗り→色不足→不自然な色の順で理由を決めること
+    /// 当てはまる条件が複数あるときは、試作と同じくイラスト→ベタ塗り→色不足→不自然な色の順で理由を決めること
     #[test]
     fn test_reasons_are_checked_in_trial_order() {
         let all_bad = Stage1Features {
-            s1_lap: 0.0,
             s1_dead: 1.0,
             s1_top5: 1.0,
             s1_green: 0.0,
@@ -265,14 +256,7 @@ mod tests {
             s1_vivid_hues: 12,
             ..passing()
         };
-        assert_eq!(judge(&all_bad), Stage1Verdict::Blurry);
-        assert_eq!(
-            judge(&Stage1Features {
-                s1_lap: 500.0,
-                ..all_bad.clone()
-            }),
-            Stage1Verdict::Illustration
-        );
+        assert_eq!(judge(&all_bad), Stage1Verdict::Illustration);
     }
 
     /// 一色で塗りつぶした画像は、輪郭が無く（くっきり度 0）、上位5色と平らな塗りで全体を占めると測ること
@@ -284,7 +268,7 @@ mod tests {
         assert_eq!(f.s1_top5, 1.0);
         assert_eq!(f.s1_dead, 1.0);
         assert_eq!(f.s1_green, 1.0);
-        assert_eq!(judge(&f), Stage1Verdict::Blurry);
+        assert_eq!(judge(&f), Stage1Verdict::Illustration);
     }
 
     /// ざらつきのある緑の画像は、くっきりしていて、緑が多く、平らな塗りが無いと測ること
