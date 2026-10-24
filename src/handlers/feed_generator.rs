@@ -35,7 +35,7 @@ pub async fn get_feed_skeleton(
 
     let language =
         bsky_core::get_user_language(headers.get("accept-language").and_then(|h| h.to_str().ok()))
-            .unwrap_or_else(|| "en".to_string());
+            .unwrap_or_else(|| "unknown".to_string());
 
     let cursor_state = if params.cursor.is_some() {
         "exists"

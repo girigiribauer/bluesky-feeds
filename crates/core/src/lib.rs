@@ -100,7 +100,7 @@ pub fn get_user_language(header: Option<&str>) -> Option<String> {
         .filter_map(|s| {
             let mut parts = s.split(';');
             let lang = parts.next()?.trim();
-            if lang.is_empty() {
+            if lang.is_empty() || lang == "*" {
                 return None;
             }
             let q = parts
@@ -163,5 +163,14 @@ mod tests {
         assert_eq!(get_user_language(None), None);
         assert_eq!(get_user_language(Some("")), None);
         assert_eq!(get_user_language(Some("   ")), None);
+        assert_eq!(get_user_language(Some("*")), None);
+        assert_eq!(
+            get_user_language(Some("ja, *;q=0.1")),
+            Some("ja".to_string())
+        );
+        assert_eq!(
+            get_user_language(Some("*, en;q=0.5")),
+            Some("en".to_string())
+        );
     }
 }
