@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
+pub const DEFAULT_ENDPOINT: &str = "wss://jetstream1.us-east.bsky.network/subscribe";
 const BACKOFF_MAX: Duration = Duration::from_secs(300);
 const SESSION_MIN_SUCCESS_EVENTS: u64 = 100;
 const SESSION_MIN_SUCCESS_SECS: u64 = 10;
@@ -55,7 +56,7 @@ impl ConsumerConfig {
     pub fn from_env() -> Self {
         ConsumerConfig {
             endpoint: std::env::var("JETSTREAM_URL")
-                .expect("JETSTREAM_URL environment variable must be set"),
+                .unwrap_or_else(|_| DEFAULT_ENDPOINT.to_string()),
             ..ConsumerConfig::default()
         }
     }

@@ -22,12 +22,10 @@ Bluesky のフィード置き場です
 
 ## ローカルでの実行
 
-`.env` ファイルに認証情報などが設定されていることを確認の上、以下のコマンドで起動します。
+アプリパスワードは 1Password（`op://Automation/bluesky-feeds/app-password`）から `op run` で渡します。`op` にサインインした上で、以下のコマンドで起動します。
 
 ```bash
 make dev
-# または
-cargo run
 ```
 
 サーバーは `http://localhost:3000` で起動します。

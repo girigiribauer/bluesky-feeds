@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Log initialized");
 
-    let handle = std::env::var("APP_HANDLE").unwrap_or_default();
+    let handle = std::env::var("APP_HANDLE").unwrap_or_else(|_| "girigiribauer.com".to_string());
     let password = std::env::var("APP_PASSWORD").unwrap_or_default();
 
     if password.is_empty() {
@@ -76,6 +76,18 @@ async fn main() -> anyhow::Result<()> {
         (None, None)
     };
 
+    let umami = bluesky_feeds::analytics::UmamiClient::from_settings(
+        std::env::var("UMAMI_HOST").ok(),
+        std::env::var("UMAMI_WEBSITE_ID").ok(),
+        Some(
+            std::env::var("APP_HOSTNAME")
+                .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
+        ),
+    );
+    if umami.is_none() {
+        tracing::info!("Analytics disabled: UMAMI_HOST or UMAMI_WEBSITE_ID is not set");
+    }
+
     let app_state = AppState {
         http_client,
         bluesky_api_base: "https://api.bsky.app".to_string(),
@@ -89,14 +101,7 @@ async fn main() -> anyhow::Result<()> {
         realfakebluesky_db,
         oneyearago_db,
         silentviews_db,
-        umami: bluesky_feeds::analytics::UmamiClient::new(
-            std::env::var("UMAMI_HOST").expect("UMAMI_HOST must be set"),
-            std::env::var("UMAMI_WEBSITE_ID").expect("UMAMI_WEBSITE_ID must be set"),
-            Some(
-                std::env::var("APP_HOSTNAME")
-                    .unwrap_or_else(|_| "feeds.bsky.girigiribauer.com".to_string()),
-            ),
-        ),
+        umami,
     };
 
     let port = std::env::var("PORT")

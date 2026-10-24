@@ -171,10 +171,10 @@ async fn create_test_state(bluesky_api_base: &str) -> SharedState {
         realfakebluesky_db: db.clone(),
         oneyearago_db: db.clone(),
         silentviews_db: db,
-        umami: bluesky_feeds::analytics::UmamiClient::new(
+        umami: Some(bluesky_feeds::analytics::UmamiClient::new(
             "http://localhost:3000".to_string(),
             "dummy_website_id".to_string(),
             Some("localhost".to_string()),
-        ),
+        )),
     }
 }

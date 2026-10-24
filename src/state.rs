@@ -29,7 +29,7 @@ pub struct AppState {
     pub realfakebluesky_db: SqlitePool,
     pub oneyearago_db: SqlitePool,
     pub silentviews_db: SqlitePool,
-    pub umami: crate::analytics::UmamiClient,
+    pub umami: Option<crate::analytics::UmamiClient>,
 }
 
 #[derive(Clone, Debug)]

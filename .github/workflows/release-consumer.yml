@@ -12,7 +12,7 @@ on:
       - "**.md"
       - "Makefile"
       - "scripts/**"
-      - ".env.example"
+      - ".env.op"
       - ".github/workflows/release-server.yml"
   pull_request:
     branches:
@@ -26,7 +26,7 @@ on:
       - "**.md"
       - "Makefile"
       - "scripts/**"
-      - ".env.example"
+      - ".env.op"
       - ".github/workflows/release-server.yml"
   workflow_dispatch:
 

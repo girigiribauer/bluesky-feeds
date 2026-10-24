@@ -47,6 +47,16 @@ impl UmamiClient {
         }
     }
 
+    pub fn from_settings(
+        host: Option<String>,
+        website_id: Option<String>,
+        hostname: Option<String>,
+    ) -> Option<Self> {
+        let host = host.filter(|h| !h.trim().is_empty())?;
+        let website_id = website_id.filter(|id| !id.trim().is_empty())?;
+        Some(Self::new(host, website_id, hostname))
+    }
+
     pub fn send_event(
         &self,
         url: String,
@@ -101,5 +111,39 @@ impl UmamiClient {
             }
         }
         .in_current_span());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn some(value: &str) -> Option<String> {
+        Some(value.to_string())
+    }
+
+    /// 送り先と ID が両方そろっていれば、アクセス解析の係を作ること
+    #[test]
+    fn test_from_settings_with_host_and_id_is_enabled() {
+        let client = UmamiClient::from_settings(some("example.com"), some("abc"), None);
+        assert!(client.is_some());
+    }
+
+    /// ID が無ければ、アクセス解析の係を作らないこと
+    #[test]
+    fn test_from_settings_without_id_is_disabled() {
+        assert!(UmamiClient::from_settings(some("example.com"), None, None).is_none());
+    }
+
+    /// 送り先が無ければ、アクセス解析の係を作らないこと
+    #[test]
+    fn test_from_settings_without_host_is_disabled() {
+        assert!(UmamiClient::from_settings(None, some("abc"), None).is_none());
+    }
+
+    /// 空の ID は、無いものとして扱うこと
+    #[test]
+    fn test_from_settings_with_empty_id_is_disabled() {
+        assert!(UmamiClient::from_settings(some("example.com"), some(""), None).is_none());
     }
 }

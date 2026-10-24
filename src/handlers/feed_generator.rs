@@ -53,13 +53,15 @@ pub async fn get_feed_skeleton(
         "language": language,
     });
 
-    state.umami.send_event(
-        feed_path,
-        None,
-        Some(requester_did.clone()),
-        Some(language.clone()),
-        Some(event_data),
-    );
+    if let Some(umami) = &state.umami {
+        umami.send_event(
+            feed_path,
+            None,
+            Some(requester_did.clone()),
+            Some(language.clone()),
+            Some(event_data),
+        );
+    }
 
     let service =
         FeedService::from_str(feed_name).ok_or(AppError::NotFound("Feed not found".to_string()))?;

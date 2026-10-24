@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use dotenv::dotenv;
 use reqwest::{Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -29,8 +28,6 @@ const AVAILABLE_SERVICES: &[&str] = &["helloworld", "todoapp", "oneyearago"];
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
-
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: unpublish_feed <feed_service_id>");
@@ -45,10 +42,8 @@ async fn main() -> Result<()> {
         );
     }
 
-    let handle = env::var("APP_HANDLE")
-        .context("APP_HANDLE not set in .env (checked current and parent directories)")?;
-    let password = env::var("APP_PASSWORD")
-        .context("APP_PASSWORD not set in .env (checked current and parent directories)")?;
+    let handle = env::var("APP_HANDLE").unwrap_or_else(|_| "girigiribauer.com".to_string());
+    let password = env::var("APP_PASSWORD").context("APP_PASSWORD is not set")?;
 
     let client = ClientBuilder::new().build()?;
 

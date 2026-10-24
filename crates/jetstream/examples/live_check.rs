@@ -1,13 +1,12 @@
 use jetstream::event::SkipStats;
 use jetstream::ws::{build_subscribe_url, run_session, SessionEnd, SkipCounters};
-use jetstream::POST_COLLECTION;
+use jetstream::{DEFAULT_ENDPOINT, POST_COLLECTION};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 const WANTED_POSTS: usize = 20;
-const DEFAULT_ENDPOINT: &str = "wss://jetstream1.us-east.bsky.network/subscribe";
 
 #[tokio::main]
 async fn main() -> ExitCode {
