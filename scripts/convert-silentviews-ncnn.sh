@@ -47,9 +47,6 @@ convert() {
   param_sha=$3
   bin_sha=$4
   (cd "$work" && "./$pnnx/pnnx" "$stem.onnx" "inputshape=$shape" fp16=0 > "$stem.log" 2>&1)
-  if [ "$stem" = face_detection_yunet_2023mar ]; then
-    sed -i.orig -E '/^Reshape /s/ 1=(6400|1600|400)$/ 1=-1/' "$work/$stem.ncnn.param"
-  fi
   for ext in param bin; do
     expected=$param_sha
     [ "$ext" = bin ] && expected=$bin_sha
@@ -82,9 +79,6 @@ case "$target" in
     fetch "$work/object_detection_nanodet_2022nov.onnx" \
       "$zoo/object_detection_nanodet/resolve/5bfd47077350a726ad440dd7bd1e1e35e8ebcfb2/object_detection_nanodet_2022nov.onnx" \
       4b82da9944b88577175ee23a459dce2e26e6e4be573def65b1055dc2d9720186
-    fetch "$work/face_detection_yunet_2023mar.onnx" \
-      "$zoo/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx" \
-      8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
     fetch "$work/u2netp.onnx" \
       "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx" \
       309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
@@ -94,9 +88,6 @@ case "$target" in
     convert object_detection_nanodet_2022nov '[1,3,416,416]' \
       554ea94e635bee53e09216d842b536cba52c7cf8ab59e5f3bd5ef7d011191f47 \
       8f0f1d5cebb8721ac3544dd9edd29e8f2c21dd4df17bfb993772b1d54674e6a8
-    convert face_detection_yunet_2023mar '[1,3,640,640]' \
-      8d4c649e606d816a2ec69851070bbaf6d8abfd1e983e48a779fc84c9fcf1d014 \
-      8faa696d61ad6bf5c13ed5d6c8ae35e376c660968db53d723a329020856ca5c9
     convert u2netp '[1,3,320,320]' \
       faf6e6aa63b8934e7077f4100deeac5f590f64931da03b0000133e5895d1dc42 \
       7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908

@@ -20,25 +20,19 @@ The consumer program and the model files under crates/silentviews/consumer/model
    Copyright: Copyright 2020-2021 RangiLyu. All rights reserved.
    Changes: Converted from ONNX to ncnn (object_detection_nanodet_2022nov.ncnn.*).
 
-4. YuNet face detection (face_detection_yunet_2023mar)
-   Source: https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet (https://github.com/ShiqiYu/libfacedetection)
-   License: MIT License
-   Copyright: Copyright (c) 2020 Shiqi Yu <shiqi.yu@gmail.com>
-   Changes: Converted from ONNX to ncnn and made the detection head accept any input size (face_detection_yunet_2023mar.ncnn.*).
-
-5. U-2-Net (u2netp)
+4. U-2-Net (u2netp)
    Source: https://github.com/xuebinqin/U-2-Net
    License: Apache License 2.0
    Copyright: Xuebin Qin and the U-2-Net authors
    Changes: The ONNX export published by rembg (below) was converted to ncnn (u2netp.ncnn.*).
 
-6. rembg (ONNX export of u2netp)
+5. rembg (ONNX export of u2netp)
    Source: https://github.com/danielgatis/rembg (u2netp.onnx from release v0.0.0)
    License: MIT License
    Copyright: Copyright (c) 2020 Daniel Gatis
    Changes: Converted to ncnn (u2netp.ncnn.*).
 
-7. ncnn
+6. ncnn
    Source: https://github.com/Tencent/ncnn
    License: BSD 3-Clause License (with the third-party notices below)
    Copyright: Copyright (C) 2017 Tencent. All rights reserved.
@@ -496,32 +490,6 @@ NanoDet object detection (object_detection_nanodet_2022nov)
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-
-==============================================================================
-YuNet face detection (face_detection_yunet_2023mar)
-==============================================================================
-
-MIT License
-
-Copyright (c) 2020 Shiqi Yu <shiqi.yu@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
 ==============================================================================
 U-2-Net (u2netp)

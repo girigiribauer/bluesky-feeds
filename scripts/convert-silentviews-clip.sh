@@ -30,6 +30,7 @@ NEAR = ["a close-up photo", "a macro photo", "a photo looking down at the ground
         "a close-up photo of mushrooms", "a close-up photo of leaves", "a photo of a garden bed"]
 TOON = ["an anime character", "a cartoon character", "a 3D video game character", "an illustration", "a screenshot of a video game"]
 WINDOW = ["a photo taken from inside a car", "a view through a car windshield"]
+TILE_PERSON = ["a photo of a person", "a photo of people", "a person standing", "a hiker", "a man", "a woman"]
 TILE_TOON = TOON + ["a plush toy", "a stuffed toy", "a video game scene", "a 3D render", "an anime scene", "computer graphics"]
 SCENE_NATURE = ["a photo of nature", "a photo of a landscape", "a photo of a forest", "a photo of mountains",
                 "a photo of the sea", "a photo of the sky", "a photo of a field", "a photo of a lake",
@@ -58,8 +59,10 @@ a, b = embed(PHOTO + TOON), embed(FAR + NEAR)
 c = embed(SCENE_NATURE + SCENE_MANMADE)
 d = embed(WINDOW)
 e = embed(TILE_TOON)
-json.dump({"photo": a[:len(PHOTO)], "toon": a[len(PHOTO):], "far": b[:len(FAR)], "near": b[len(FAR):],
-           "scene_nature": c[:len(SCENE_NATURE)], "scene_manmade": c[len(SCENE_NATURE):], "window": d, "tile_toon": e},
+f = embed(TILE_PERSON)
+json.dump({"photo": a[:len(PHOTO)], "far": b[:len(FAR)], "near": b[len(FAR):],
+           "scene_nature": c[:len(SCENE_NATURE)], "scene_manmade": c[len(SCENE_NATURE):], "window": d, "tile_toon": e,
+           "tile_person": f},
           open(f"{out}/clip_text_embeds.json", "w"))
 size = m.config.vision_config.image_size
 json.dump({"image_size": size, "mean": pre["image_mean"], "std": pre["image_std"], "logit_scale": float(m.logit_scale.exp())},

@@ -6,12 +6,15 @@ use std::time::Duration;
 use jetstream::{App, PostDelete, PostEvent};
 use sqlx::SqlitePool;
 
-use crate::pipeline::{self, Models, Rejection};
+use crate::pipeline::{self, Models};
+use crate::reason::Reason;
 use crate::{candidate_images, CandidateImage};
+
+const WORKERS: usize = 4;
 
 type Job = (
     Vec<Vec<u8>>,
-    tokio::sync::oneshot::Sender<Result<(), Rejection>>,
+    tokio::sync::oneshot::Sender<Result<(), Reason>>,
 );
 
 pub struct SilentViews {
@@ -46,13 +49,14 @@ impl SilentViews {
         }
     }
 
-    async fn judge(&self, images: &[CandidateImage]) -> anyhow::Result<Result<(), Rejection>> {
-        let smalls = self
+    async fn judge(&self, images: &[CandidateImage]) -> anyhow::Result<Result<(), Reason>> {
+        let thumbnails = self
             .fetch_all(images.iter().map(|i| self.url(&i.small_url)))
             .await?;
-        let first = tokio::task::spawn_blocking(move || pipeline::stage1(&smalls)).await?;
-        if first.is_err() {
-            return Ok(first);
+        let thumbs =
+            tokio::task::spawn_blocking(move || pipeline::judge_thumbnails(&thumbnails)).await?;
+        if thumbs.is_err() {
+            return Ok(thumbs);
         }
         let larges = self
             .fetch_all(images.iter().map(|i| self.url(&i.large_url)))
@@ -98,7 +102,7 @@ fn start_judge_thread(models_dir: PathBuf) -> anyhow::Result<mpsc::Sender<Job>> 
                 }
             };
             for (larges, reply) in inbox {
-                let _ = reply.send(pipeline::stage2(&models, &larges));
+                let _ = reply.send(pipeline::judge_images(&models, &larges));
             }
         })?;
     loaded.recv()??;
@@ -143,6 +147,10 @@ impl App for SilentViews {
         Ok(())
     }
 
+    fn workers(&self) -> usize {
+        WORKERS
+    }
+
     fn sieve(&self, post: &PostEvent) -> bool {
         candidate_images(post).is_some()
     }
@@ -165,8 +173,8 @@ impl App for SilentViews {
                 }
                 Err(e) => tracing::error!("Failed to store silentviews post: {e}"),
             },
-            Ok(Err(rejection)) => tracing::debug!(
-                "reject {rejection:?}: t={:.0}ms, uri={}",
+            Ok(Err(reason)) => tracing::debug!(
+                "reject {reason:?}: t={:.0}ms, uri={}",
                 started.elapsed().as_secs_f64() * 1000.0,
                 post.uri()
             ),
@@ -266,6 +274,18 @@ mod tests {
             .unwrap();
 
         assert!(SilentViews::new(pool, Path::new("/nonexistent"), None).is_err());
+    }
+
+    /// 画像のダウンロード待ちを重ねるため、投稿を4件まで同時に処理すること
+    #[tokio::test]
+    async fn test_processes_up_to_four_posts_at_once() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let app = SilentViews::new(pool, crate::cv::testing::models(), None).unwrap();
+
+        assert_eq!(app.workers(), 4);
     }
 
     fn delete_of(uri: &str) -> PostDelete {

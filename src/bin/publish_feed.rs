@@ -102,6 +102,12 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
         description: "Real Bluesky feed\n\n正真正銘の青空の写真だけを集めたフィード",
         avatar: Some("assets/realbluesky.png"),
     },
+    FeedServiceConfig {
+        service: "silentviews",
+        display_name: "Silent Views",
+        description: "A quiet feed where only beautiful photos flow by, with no one saying a word.\n\n誰も喋ってない、綺麗な写真だけが流れていく、静かなフィードです",
+        avatar: Some("assets/bluesky-feed-silentviews.png"),
+    },
 ];
 
 #[tokio::main]

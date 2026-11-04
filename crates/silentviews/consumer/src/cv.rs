@@ -1,4 +1,4 @@
-use vision::filter::{self, Plane};
+use vision::filter::Plane;
 use vision::img::{self, Image, Interp};
 
 pub fn plane(m: &Image) -> Plane {
@@ -21,24 +21,6 @@ pub fn pixels(m: &Image) -> &[[u8; 3]] {
     m.data.as_chunks::<3>().0
 }
 
-pub fn colorfulness(pixels: &[[u8; 3]]) -> f64 {
-    let n = pixels.len() as f64;
-    let (mut rg_sum, mut yb_sum, mut rg_sq, mut yb_sq) = (0.0, 0.0, 0.0, 0.0);
-    for p in pixels {
-        let (b, g, r) = (p[0] as f64, p[1] as f64, p[2] as f64);
-        let rg = r - g;
-        let yb = 0.5 * (r + g) - b;
-        rg_sum += rg;
-        yb_sum += yb;
-        rg_sq += rg * rg;
-        yb_sq += yb * yb;
-    }
-    let (rg_mean, yb_mean) = (rg_sum / n, yb_sum / n);
-    let rg_var = rg_sq / n - rg_mean * rg_mean;
-    let yb_var = yb_sq / n - yb_mean * yb_mean;
-    (rg_var + yb_var).sqrt() + 0.3 * (rg_mean * rg_mean + yb_mean * yb_mean).sqrt()
-}
-
 pub fn top5_share(pixels: &[[u8; 3]]) -> f64 {
     let mut counts = vec![0u32; 32 * 32 * 32];
     for p in pixels {
@@ -46,28 +28,6 @@ pub fn top5_share(pixels: &[[u8; 3]]) -> f64 {
     }
     counts.sort_unstable_by(|a, b| b.cmp(a));
     counts.iter().take(5).map(|&c| c as u64).sum::<u64>() as f64 / pixels.len() as f64
-}
-
-pub fn laplacian_variance(gray: &Image) -> f64 {
-    let v: Vec<f64> = filter::laplacian(&plane(gray))
-        .data
-        .iter()
-        .map(|&x| x as f64)
-        .collect();
-    let n = v.len() as f64;
-    let mean = v.iter().sum::<f64>() / n;
-    v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n
-}
-
-pub fn vivid_hues(hsv_pixels: &[[u8; 3]]) -> u32 {
-    let mut hist = [0u64; 12];
-    for p in hsv_pixels {
-        if p[1] > 120 && p[2] > 90 {
-            hist[p[0] as usize / 15] += 1;
-        }
-    }
-    let n = hsv_pixels.len() as f64;
-    hist.iter().filter(|&&c| c as f64 / n > 0.02).count() as u32
 }
 
 #[cfg(test)]
@@ -220,10 +180,6 @@ pub mod testing {
 
     pub fn fixture(name: &str) -> Image {
         vision::img::decode(&fixture_bytes(name)).unwrap().0
-    }
-
-    pub fn fixture_gray(name: &str) -> Image {
-        vision::img::decode(&fixture_bytes(name)).unwrap().1
     }
 
     pub fn crop(src: &Image, r: Rect) -> Image {

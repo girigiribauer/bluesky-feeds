@@ -34,11 +34,11 @@ fn main() -> anyhow::Result<()> {
         };
         let verdict = match read(small_dir) {
             None => "missing_small".to_string(),
-            Some(smalls) => match pipeline::stage1(&smalls) {
+            Some(smalls) => match pipeline::judge_thumbnails(&smalls) {
                 Err(r) => format!("{r:?}"),
                 Ok(()) => match read(large_dir) {
                     None => "missing_large".to_string(),
-                    Some(larges) => match pipeline::stage2(&m, &larges) {
+                    Some(larges) => match pipeline::judge_images(&m, &larges) {
                         Ok(()) => "PASS".to_string(),
                         Err(r) => format!("{r:?}"),
                     },

@@ -1,25 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use crate::judge::{
-    judge_faces, judge_foreground, judge_late, judge_light, judge_objects, judge_ocr, judge_scene,
-    judge_tiles, Late, Reason,
-};
-use crate::stage1::{self, Stage1Verdict};
-use crate::stage2::clip::{Clip, ClipScorer};
-use crate::stage2::faces::FaceDetectors;
-use crate::stage2::foreground::ForegroundDetector;
-use crate::stage2::objects::ObjectDetector;
-use crate::stage2::ocr::TextDetector;
-use crate::stage2::{depth, measure_light, near};
+use crate::reason::Reason;
 use crate::too_elongated;
+use crate::tools::clip_words::{self, ClipScorer};
+use crate::tools::foreground_objects::{self, ForegroundDetector};
+use crate::tools::object_detector::{self, ObjectDetector};
+use crate::tools::text_detector::{self, TextDetector};
+use crate::tools::thumb_colors;
+use crate::tools::{edge_amount, flat_areas, mirror_symmetry, nearness, scene_zones, text_texture};
 use vision::img::{self, Image};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Rejection {
-    Stage1(Stage1Verdict),
-    Stage1Unmeasured,
-    Stage2(Reason),
-}
 
 pub struct Models {
     dir: PathBuf,
@@ -31,7 +20,6 @@ impl Models {
             return_large_blocks_directly(),
             "failed to set the malloc mmap threshold"
         );
-        drop(FaceDetectors::load(models_dir)?);
         drop(ObjectDetector::load(models_dir)?);
         drop(TextDetector::load(models_dir)?);
         drop(ClipScorer::load(models_dir)?);
@@ -43,141 +31,91 @@ impl Models {
     }
 }
 
-pub fn stage1(smalls: &[Vec<u8>]) -> Result<(), Rejection> {
-    for bytes in smalls {
-        let (img, _) = decode(bytes).ok_or(Rejection::Stage1Unmeasured)?;
-        let features = stage1::features(&img).map_err(|_| Rejection::Stage1Unmeasured)?;
-        match stage1::judge(&features) {
-            Stage1Verdict::Pass => {}
-            verdict => return Err(Rejection::Stage1(verdict)),
-        }
+pub fn judge_thumbnails(thumbnails: &[Vec<u8>]) -> Result<(), Reason> {
+    for bytes in thumbnails {
+        let (thumb, _) = img::decode(bytes).ok_or(Reason::Unmeasured)?;
+        check(thumb_colors::judge(&measured(thumb_colors::measure(
+            &thumb,
+        ))?))?;
     }
     Ok(())
 }
 
-pub fn stage2(models: &Models, larges: &[Vec<u8>]) -> Result<(), Rejection> {
+pub fn judge_images(models: &Models, larges: &[Vec<u8>]) -> Result<(), Reason> {
     for bytes in larges {
         drop(open_large(bytes)?);
     }
-    let open = |i: usize| open_large(&larges[i]).ok();
-    let clips = std::cell::RefCell::new(vec![None; larges.len()]);
+    let dir = &models.dir;
+    let open = |i: usize| open_large(&larges[i]);
     let verdict = judge_all(
         larges.len(),
-        |i| {
-            let Some((bgr, gray)) = open(i) else {
-                return Some(Reason::Unmeasured);
-            };
-            judge_early_lazily(&models.dir, &bgr, &gray, &mut clips.borrow_mut()[i])
-        },
-        |i| {
-            let (bgr, gray) = open(i)?;
-            let clip = clips.borrow_mut()[i].take();
-            measure_late(&models.dir, &bgr, &gray, clip)
-        },
-        |i| {
-            let (bgr, _) = open(i)?;
-            use_model(ClipScorer::load(&models.dir), |m| m.tile_toon_max(&bgr)).ok()
-        },
-        |i| {
-            let (bgr, _) = open(i)?;
-            use_model(ForegroundDetector::load(&models.dir), |m| m.measure(&bgr)).ok()
-        },
+        &mut [
+            &mut |i| {
+                let (bgr, gray) = open(i)?;
+                judge_basic(dir, &bgr, &gray)
+            },
+            &mut |i| {
+                let (bgr, _) = open(i)?;
+                let scores = use_model(ClipScorer::load(dir), |m| m.tile_scores(&bgr));
+                check(clip_words::judge_tiles(&measured(scores)?))
+            },
+            &mut |i| {
+                let (bgr, _) = open(i)?;
+                let share = use_model(ForegroundDetector::load(dir), |m| m.measure(&bgr));
+                check(foreground_objects::judge(measured(share)?))
+            },
+        ],
     );
     release_memory();
     verdict
 }
 
-fn judge_all(
-    count: usize,
-    mut early: impl FnMut(usize) -> Option<Reason>,
-    mut late: impl FnMut(usize) -> Option<Late>,
-    mut tiles: impl FnMut(usize) -> Option<f64>,
-    mut foreground: impl FnMut(usize) -> Option<f64>,
-) -> Result<(), Rejection> {
-    let unmeasured = Rejection::Stage2(Reason::Unmeasured);
-    for i in 0..count {
-        if let Some(reason) = early(i) {
-            return Err(Rejection::Stage2(reason));
-        }
-    }
-    for i in 0..count {
-        if let Some(reason) = judge_late(&late(i).ok_or(unmeasured)?) {
-            return Err(Rejection::Stage2(reason));
-        }
-    }
-    for i in 0..count {
-        if let Some(reason) = judge_tiles(tiles(i).ok_or(unmeasured)?) {
-            return Err(Rejection::Stage2(reason));
-        }
-    }
-    for i in 0..count {
-        if let Some(reason) = judge_foreground(foreground(i).ok_or(unmeasured)?) {
-            return Err(Rejection::Stage2(reason));
+type Phase<'a> = &'a mut dyn FnMut(usize) -> Result<(), Reason>;
+
+fn judge_all(count: usize, phases: &mut [Phase]) -> Result<(), Reason> {
+    for phase in phases.iter_mut() {
+        for i in 0..count {
+            phase(i)?;
         }
     }
     Ok(())
 }
 
-fn open_large(bytes: &[u8]) -> Result<(Image, Image), Rejection> {
-    let unmeasured = Rejection::Stage2(Reason::Unmeasured);
-    let (bgr, gray) = decode(bytes).ok_or(unmeasured)?;
+fn check(reason: Option<Reason>) -> Result<(), Reason> {
+    reason.map_or(Ok(()), Err)
+}
+
+fn measured<T>(value: anyhow::Result<T>) -> Result<T, Reason> {
+    value.map_err(|_| Reason::Unmeasured)
+}
+
+fn open_large(bytes: &[u8]) -> Result<(Image, Image), Reason> {
+    let (bgr, gray) = img::decode(bytes).ok_or(Reason::Unmeasured)?;
     if too_elongated(bgr.w as f64, bgr.h as f64) {
-        return Err(Rejection::Stage2(Reason::Elongated));
+        return Err(Reason::Elongated);
     }
     Ok((bgr, gray))
 }
 
-fn judge_early_lazily(
-    models: &Path,
-    bgr: &Image,
-    gray: &Image,
-    clip: &mut Option<Clip>,
-) -> Option<Reason> {
-    let unmeasured = Some(Reason::Unmeasured);
-    let Ok(light) = measure_light(bgr, gray) else {
-        return unmeasured;
-    };
-    judge_light(&light, bgr.h.max(bgr.w) as i32)
-        .or_else(
-            || match use_model(ObjectDetector::load(models), |m| m.detect(bgr)) {
-                Ok(objects) => judge_objects(&objects),
-                Err(_) => unmeasured,
-            },
-        )
-        .or_else(
-            || match use_model(ClipScorer::load(models), |m| m.score(bgr)) {
-                Ok(c) => {
-                    let reason = judge_scene(c.manmade_p);
-                    *clip = Some(c);
-                    reason
-                }
-                Err(_) => unmeasured,
-            },
-        )
-        .or_else(
-            || match use_model(TextDetector::load(models), |m| m.detect(bgr)) {
-                Ok(ocr) => judge_ocr(&ocr),
-                Err(_) => unmeasured,
-            },
-        )
-        .or_else(
-            || match use_model(FaceDetectors::load(models), |m| m.measure(bgr)) {
-                Ok(faces) => judge_faces(&faces),
-                Err(_) => unmeasured,
-            },
-        )
-}
-
-fn measure_late(models: &Path, bgr: &Image, gray: &Image, clip: Option<Clip>) -> Option<Late> {
-    let clip = match clip {
-        Some(c) => c,
-        None => use_model(ClipScorer::load(models), |m| m.score(bgr)).ok()?,
-    };
-    Some(Late {
-        near: near::measure(bgr, gray).ok()?,
-        sky: depth::measure(bgr).ok()?.sky,
-        clip,
-    })
+fn judge_basic(models: &Path, bgr: &Image, gray: &Image) -> Result<(), Reason> {
+    if bgr.ch != 3 || bgr.w == 0 || bgr.h == 0 || gray.ch != 1 || gray.w == 0 || gray.h == 0 {
+        return Err(Reason::Unmeasured);
+    }
+    let flat = flat_areas::measure(bgr, gray);
+    check(flat_areas::judge(&flat))?;
+    check(text_texture::judge(text_texture::measure(bgr)))?;
+    let zones = measured(scene_zones::measure(bgr))?;
+    check(scene_zones::judge(&zones, flat.smooth_share))?;
+    check(mirror_symmetry::judge(mirror_symmetry::measure(bgr)))?;
+    check(edge_amount::judge(edge_amount::measure(bgr), zones.sky))?;
+    let objects = measured(use_model(ObjectDetector::load(models), |m| m.detect(bgr)))?;
+    check(object_detector::judge(&objects))?;
+    let clip = measured(use_model(ClipScorer::load(models), |m| m.score(bgr)))?;
+    check(clip_words::judge(&clip))?;
+    let ocr = measured(use_model(TextDetector::load(models), |m| m.detect(bgr)))?;
+    check(text_detector::judge(&ocr))?;
+    let near = measured(nearness::measure(bgr, gray))?;
+    check(nearness::judge(&near, zones.sky))
 }
 
 fn use_model<M, T>(
@@ -210,43 +148,38 @@ fn release_memory() {
     }
 }
 
-fn decode(bytes: &[u8]) -> Option<(Image, Image)> {
-    img::decode(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cv::testing::{fixture_bytes, jpeg, models, solid};
-    use crate::judge::{judge_early, Early};
 
     fn textured() -> Vec<u8> {
         fixture_bytes("textured_green.jpg")
     }
 
-    /// 1段目は、全部の画像が通ったときだけ通すこと
+    /// サムネイルの判定は、全部のサムネイルが通ったときだけ通すこと
     #[test]
-    fn test_stage1_passes_only_when_all_images_pass() {
-        assert_eq!(stage1(&[textured(), textured()]), Ok(()));
+    fn test_thumbnails_passes_only_when_all_images_pass() {
+        assert_eq!(judge_thumbnails(&[textured(), textured()]), Ok(()));
     }
 
-    /// 1段目は、1枚でも弾かれたら投稿ごと弾き、その画像の理由を返すこと
+    /// サムネイルの判定は、1枚でも弾かれたら投稿ごと弾き、その画像の理由を返すこと
     #[test]
-    fn test_stage1_rejects_post_if_any_image_fails() {
+    fn test_thumbnails_rejects_post_if_any_image_fails() {
         let flat = jpeg(&solid(128, 128, (60.0, 140.0, 60.0)));
 
         assert_eq!(
-            stage1(&[textured(), flat]),
-            Err(Rejection::Stage1(Stage1Verdict::Illustration))
+            judge_thumbnails(&[textured(), flat]),
+            Err(Reason::ThumbIllustration)
         );
     }
 
-    /// 1段目で画像として読めないデータは、止まらずに「測れない」として弾くこと
+    /// サムネイルが画像として読めないデータなら、止まらずに「未測定」として弾くこと
     #[test]
-    fn test_stage1_rejects_undecodable_bytes() {
+    fn test_thumbnails_rejects_undecodable_bytes() {
         assert_eq!(
-            stage1(&[b"not an image".to_vec()]),
-            Err(Rejection::Stage1Unmeasured)
+            judge_thumbnails(&[b"not an image".to_vec()]),
+            Err(Reason::Unmeasured)
         );
     }
 
@@ -255,20 +188,22 @@ mod tests {
     fn test_large_image_too_elongated_is_rejected_before_measuring() {
         let wide = jpeg(&solid(900, 300, (60.0, 140.0, 60.0)));
 
-        assert_eq!(
-            open_large(&wide).err(),
-            Some(Rejection::Stage2(Reason::Elongated))
-        );
+        assert_eq!(open_large(&wide).err(), Some(Reason::Elongated));
         assert!(open_large(&jpeg(&solid(899, 300, (60.0, 140.0, 60.0)))).is_ok());
     }
 
-    /// 2段目で画像として読めないデータは、止まらずに「未測定」として弾くこと
+    /// 大きい画像が画像として読めないデータなら、止まらずに「未測定」として弾くこと
     #[test]
     fn test_large_undecodable_bytes_are_unmeasured() {
-        assert_eq!(
-            open_large(b"not an image").err(),
-            Some(Rejection::Stage2(Reason::Unmeasured))
-        );
+        assert_eq!(open_large(b"not an image").err(), Some(Reason::Unmeasured));
+    }
+
+    /// 空の画像は、どの道具でも測らずに「未測定」として弾くこと（判定に失敗した画像は載せないため）
+    #[test]
+    fn test_basic_rejects_empty_image_as_unmeasured() {
+        let result = judge_basic(models(), &Image::new(0, 0, 3), &Image::new(0, 0, 1));
+
+        assert_eq!(result, Err(Reason::Unmeasured));
     }
 
     /// Linux では、128KB 以上のメモリを共有の置き場（ヒープ）を使わず OS から直接借りる設定にできること（CLIP や文字探しの作業メモリでヒープが広がったまま戻らず、投稿の合間も約86MB 残っていたのを約27MB にするため）
@@ -297,202 +232,53 @@ mod tests {
         assert!(Models::load(models()).is_ok());
     }
 
-    fn early_with(change: impl Fn(&mut Early)) -> Option<Reason> {
-        let mut e = crate::judge::tests::passing();
-        change(&mut e);
-        judge_early(&e)
-    }
-
-    fn late_with(change: impl Fn(&mut Late)) -> Late {
-        let mut l = crate::judge::tests::passing_late();
-        change(&mut l);
-        l
-    }
-
-    /// 2段目は、全部の画像が前半も後半も通ったときだけ通すこと
+    /// どの段階でも全部の画像が通ったときだけ、投稿を通すこと
     #[test]
-    fn test_judge_all_passes_when_every_image_passes() {
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |_| Some(0.0),
-            |_| Some(0.0),
-        );
+    fn test_judge_all_passes_when_every_image_passes_every_phase() {
+        let result = judge_all(2, &mut [&mut |_| Ok(()), &mut |_| Ok(())]);
 
         assert_eq!(result, Ok(()));
     }
 
-    /// 前半で1枚でも弾かれたら、後半を測らずに投稿ごと弾くこと（重い計算を省くため）
+    /// ある段階で1枚でも弾かれたら、その理由で投稿ごと弾き、後の段階は1枚も測らないこと（重い計算を後ろに置いて省くため）
     #[test]
-    fn test_judge_all_stops_before_late_when_early_rejects() {
-        let mut late_calls = 0;
+    fn test_judge_all_stops_before_later_phases_when_any_image_is_rejected() {
+        let mut later_calls = 0;
         let result = judge_all(
             2,
-            |i| {
-                early_with(|e| {
+            &mut [
+                &mut |i| {
                     if i == 1 {
-                        e.faces.yn_count = 2
+                        Err(Reason::ToonTile)
+                    } else {
+                        Ok(())
                     }
-                })
-            },
-            |_| {
-                late_calls += 1;
-                Some(late_with(|_| {}))
-            },
-            |_| Some(0.0),
-            |_| Some(0.0),
+                },
+                &mut |_| {
+                    later_calls += 1;
+                    Ok(())
+                },
+            ],
         );
 
-        assert_eq!(result, Err(Rejection::Stage2(Reason::FaceYunet)));
-        assert_eq!(late_calls, 0);
+        assert_eq!(result, Err(Reason::ToonTile));
+        assert_eq!(later_calls, 0);
     }
 
-    /// 前半を全部通っても、後半で1枚でも弾かれたら投稿ごと弾くこと
-    #[test]
-    fn test_judge_all_rejects_when_late_rejects_any_image() {
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |i| {
-                Some(late_with(|l| {
-                    if i == 1 {
-                        l.clip.toon_p = 0.9
-                    }
-                }))
-            },
-            |_| Some(0.0),
-            |_| Some(0.0),
-        );
-
-        assert_eq!(result, Err(Rejection::Stage2(Reason::Toon)));
-    }
-
-    /// 前半・後半・マスのどこかで測れなかった画像があれば、「未測定」として投稿ごと弾くこと
+    /// ある段階で測れなかった画像があれば、「未測定」として投稿ごと弾くこと
     #[test]
     fn test_judge_all_rejects_unmeasured() {
-        let early_fail = judge_all(
-            2,
-            |i| {
-                if i == 0 {
-                    early_with(|_| {})
-                } else {
-                    Some(Reason::Unmeasured)
-                }
-            },
-            |_| Some(late_with(|_| {})),
-            |_| Some(0.0),
-            |_| Some(0.0),
-        );
-        let late_fail = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |i| (i == 0).then(|| late_with(|_| {})),
-            |_| Some(0.0),
-            |_| Some(0.0),
-        );
-        let tiles_fail = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |i| (i == 0).then_some(0.0),
-            |_| Some(0.0),
-        );
-
-        assert_eq!(early_fail, Err(Rejection::Stage2(Reason::Unmeasured)));
-        assert_eq!(late_fail, Err(Rejection::Stage2(Reason::Unmeasured)));
-        assert_eq!(tiles_fail, Err(Rejection::Stage2(Reason::Unmeasured)));
-    }
-
-    /// 後半で1枚でも弾かれたら、マスの判定をせずに投稿ごと弾くこと（マスの判定は CLIP を9回動かして重いため、最後に回す）
-    #[test]
-    fn test_judge_all_stops_before_tiles_when_late_rejects() {
-        let mut tile_calls = 0;
         let result = judge_all(
             2,
-            |_| early_with(|_| {}),
-            |i| {
-                Some(late_with(|l| {
-                    if i == 1 {
-                        l.clip.toon_p = 0.9
-                    }
-                }))
-            },
-            |_| {
-                tile_calls += 1;
-                Some(0.0)
-            },
-            |_| Some(0.0),
+            &mut [&mut |i| check((i == 1).then_some(Reason::Unmeasured))],
         );
 
-        assert_eq!(result, Err(Rejection::Stage2(Reason::Toon)));
-        assert_eq!(tile_calls, 0);
+        assert_eq!(result, Err(Reason::Unmeasured));
     }
 
-    /// ほかを全部通っても、マスの判定で1枚でも弾かれたら投稿ごと弾くこと
+    /// 真ん中を人が歩いている写真は、重いマスの判定に進む前に「主役あり」で弾くこと
     #[test]
-    fn test_judge_all_rejects_when_tiles_reject_any_image() {
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |i| Some(if i == 1 { 0.9 } else { 0.0 }),
-            |_| Some(0.0),
-        );
-
-        assert_eq!(result, Err(Rejection::Stage2(Reason::ToonTile)));
-    }
-
-    /// マスの判定で1枚でも弾かれたら、手前の物の判定をせずに投稿ごと弾くこと（手前の物の判定は目立つ物を切り出すモデルを動かして重いため、最後に回す）
-    #[test]
-    fn test_judge_all_stops_before_foreground_when_tiles_reject() {
-        let mut foreground_calls = 0;
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |i| Some(if i == 1 { 0.9 } else { 0.0 }),
-            |_| {
-                foreground_calls += 1;
-                Some(0.0)
-            },
-        );
-
-        assert_eq!(result, Err(Rejection::Stage2(Reason::ToonTile)));
-        assert_eq!(foreground_calls, 0);
-    }
-
-    /// ほかを全部通っても、手前の物の判定で1枚でも弾かれたら投稿ごと弾くこと
-    #[test]
-    fn test_judge_all_rejects_when_foreground_rejects_any_image() {
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |_| Some(0.0),
-            |i| Some(if i == 1 { 0.1 } else { 0.0 }),
-        );
-
-        assert_eq!(result, Err(Rejection::Stage2(Reason::ForegroundObject)));
-    }
-
-    /// 手前の物を測れなかった画像があれば、「未測定」として投稿ごと弾くこと
-    #[test]
-    fn test_judge_all_rejects_unmeasured_foreground() {
-        let result = judge_all(
-            2,
-            |_| early_with(|_| {}),
-            |_| Some(late_with(|_| {})),
-            |_| Some(0.0),
-            |i| (i == 0).then_some(0.0),
-        );
-
-        assert_eq!(result, Err(Rejection::Stage2(Reason::Unmeasured)));
-    }
-
-    /// 人の写った写真は、後半に進まず2段目の前半で弾くこと（この写真は、上半身より先に「主役あり」で当てはまる）
-    #[test]
-    fn test_stage2_rejects_person_photo() {
+    fn test_images_rejects_person_photo() {
         let m = Models::load(models()).unwrap();
         let photo = std::fs::read(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -500,9 +286,6 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(
-            stage2(&m, &[photo]),
-            Err(Rejection::Stage2(Reason::CenterSubject))
-        );
+        assert_eq!(judge_images(&m, &[photo]), Err(Reason::CenterSubject));
     }
 }

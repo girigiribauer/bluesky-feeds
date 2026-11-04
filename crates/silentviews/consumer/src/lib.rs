@@ -1,9 +1,8 @@
 pub mod app;
 pub mod cv;
-pub mod judge;
 pub mod pipeline;
-pub mod stage1;
-pub mod stage2;
+pub mod reason;
+pub mod tools;
 
 use anyhow::{Context, Result};
 use atrium_api::app::bsky::feed::post::RecordEmbedRefs;
@@ -52,7 +51,7 @@ pub fn too_elongated(width: f64, height: f64) -> bool {
 
 pub fn candidate_images(post: &PostEvent) -> Option<Vec<CandidateImage>> {
     let record = &post.record;
-    if record.is_reply || record.self_labels.is_some() || has_words(&record.text) {
+    if record.is_reply || record.self_labels.is_some() || !is_silent(&record.text) {
         return None;
     }
 
@@ -92,8 +91,40 @@ pub fn candidate_images(post: &PostEvent) -> Option<Vec<CandidateImage>> {
     }
 }
 
-fn has_words(text: &str) -> bool {
-    text.chars().any(char::is_alphanumeric)
+const MAX_MARKS: usize = 3;
+
+fn is_silent(text: &str) -> bool {
+    !text.chars().any(char::is_alphanumeric) && marks(text) <= MAX_MARKS
+}
+
+fn marks(text: &str) -> usize {
+    const ZWJ: char = '\u{200D}';
+    let mut count = 0;
+    let mut flag_half = false;
+    let mut prev = ' ';
+    for c in text.chars() {
+        let joined = prev == ZWJ;
+        prev = c;
+        if joined || c == ZWJ || c.is_whitespace() || is_modifier(c) {
+            continue;
+        }
+        if ('\u{1F1E6}'..='\u{1F1FF}').contains(&c) {
+            flag_half = !flag_half;
+            if !flag_half {
+                continue;
+            }
+        }
+        count += 1;
+    }
+    count
+}
+
+fn is_modifier(c: char) -> bool {
+    matches!(c,
+        '\u{FE00}'..='\u{FE0F}'
+        | '\u{1F3FB}'..='\u{1F3FF}'
+        | '\u{E0020}'..='\u{E007F}'
+        | '\u{20E3}')
 }
 
 pub const CDN_BASE: &str = "https://cdn.bsky.app";
@@ -174,6 +205,33 @@ mod tests {
     fn test_wordless_image_post_is_candidate() {
         for text in ["", "   \n", "\u{3000}", "🌄", "✨🌊✨", "…", "!?", "♪"] {
             assert!(is_candidate(text, json!({})), "text={text:?}");
+        }
+    }
+
+    /// 絵文字や記号が3個までなら候補にし、4個以上なら喋っているものとして候補にしないこと
+    #[test]
+    fn test_more_than_three_marks_are_not_candidate() {
+        assert!(is_candidate("🌄✨🌊", json!({})));
+        assert!(!is_candidate("😆😆😆😆", json!({})));
+        assert!(!is_candidate("✨ 🌊 ✨ 🌄", json!({})));
+    }
+
+    /// 肌の色つき・国旗・つないだ絵文字は、見た目どおり1個と数えること
+    #[test]
+    fn test_marks_count_what_looks_like_one_as_one() {
+        for (text, n) in [
+            ("👍🏼", 1),
+            ("🇯🇵", 1),
+            ("🇯🇵🇺🇸", 2),
+            ("🐈\u{200D}⬛", 1),
+            ("👨\u{200D}👩\u{200D}👧", 1),
+            ("❤\u{FE0F}", 1),
+            (
+                "🏴\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+                1,
+            ),
+        ] {
+            assert_eq!(marks(text), n, "text={text:?}");
         }
     }
 

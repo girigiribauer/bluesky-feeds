@@ -1,4 +1,18 @@
-use crate::lines::Rng;
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u32 {
+        self.0 = (self.0 as u32 as u64)
+            .wrapping_mul(4164903690)
+            .wrapping_add(self.0 >> 32);
+        self.0 as u32
+    }
+
+    fn next_f64(&mut self) -> f64 {
+        let t = self.next() as u64;
+        ((t << 32) | self.next() as u64) as f64 * 5.421_010_862_427_522e-20
+    }
+}
 
 fn dist2(a: &[f32], b: &[f32]) -> f32 {
     let mut d = 0f32;

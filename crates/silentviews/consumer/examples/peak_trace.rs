@@ -50,9 +50,9 @@ fn main() -> anyhow::Result<()> {
         let (Some(smalls), Some(larges)) = (read(small_dir), read(large_dir)) else {
             continue;
         };
-        let verdict = match pipeline::stage1(&smalls) {
+        let verdict = match pipeline::judge_thumbnails(&smalls) {
             Err(r) => format!("{r:?}"),
-            Ok(()) => format!("{:?}", pipeline::stage2(&m, &larges)),
+            Ok(()) => format!("{:?}", pipeline::judge_images(&m, &larges)),
         };
         gaps.push(rss());
         let now = hwm();
