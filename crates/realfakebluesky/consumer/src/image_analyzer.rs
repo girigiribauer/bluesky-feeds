@@ -52,45 +52,46 @@ pub async fn analyze_image(
     image_url: &str,
     config: &BlueDetectionConfig,
 ) -> Result<AnalysisResult> {
-    let top = tokio::time::timeout(
-        Duration::from_secs(5),
-        download_and_resize_top(image_url, config),
-    )
-    .await
-    .context("Image download timeout")?
-    .context("Failed to download image")?;
+    let bytes = tokio::time::timeout(Duration::from_secs(5), download(image_url))
+        .await
+        .context("Image download timeout")?
+        .context("Failed to download image")?;
 
-    Ok(count_blue(&top, top.height(), config))
+    analyze_bytes(&bytes, config)
 }
 
-async fn download_and_resize_top(url: &str, config: &BlueDetectionConfig) -> Result<DynamicImage> {
+async fn download(url: &str) -> Result<impl std::ops::Deref<Target = [u8]>> {
     static HTTP: OnceLock<reqwest::Client> = OnceLock::new();
-    let response = HTTP
-        .get_or_init(reqwest::Client::new)
+    HTTP.get_or_init(reqwest::Client::new)
         .get(url)
         .send()
         .await
-        .context("Failed to fetch image")?;
-
-    let bytes = response
+        .context("Failed to fetch image")?
         .bytes()
         .await
-        .context("Failed to read image bytes")?;
+        .context("Failed to read image bytes")
+}
 
-    let img = decode_image(&bytes).context("Failed to decode image")?;
-    drop(bytes);
-
-    Ok(resize_top(&img, config.max_width, config.top_percentage))
+pub fn analyze_bytes(bytes: &[u8], config: &BlueDetectionConfig) -> Result<AnalysisResult> {
+    let img = decode_image(bytes, config.max_width).context("Failed to decode image")?;
+    let top = resize_top(&img, config.max_width, config.top_percentage);
+    drop(img);
+    Ok(count_blue(&top, top.height(), config))
 }
 
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 
-fn decode_image(bytes: &[u8]) -> Result<DynamicImage> {
+fn decode_image(bytes: &[u8], min_width: u32) -> Result<DynamicImage> {
     if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
         let mut decoder = jpeg_decoder::Decoder::new(bytes);
         decoder.read_info()?;
         let info = decoder.info().context("JPEG has no header")?;
-        let (width, height) = (u32::from(info.width), u32::from(info.height));
+        let (mut width, mut height) = (u32::from(info.width), u32::from(info.height));
+        if width > min_width {
+            let min_height = (height * min_width).div_ceil(width);
+            let (w, h) = decoder.scale(min_width as u16, min_height as u16)?;
+            (width, height) = (u32::from(w), u32::from(h));
+        }
         let channels: u64 = match info.pixel_format {
             jpeg_decoder::PixelFormat::RGB24 => 3,
             jpeg_decoder::PixelFormat::L8 => 1,
@@ -525,7 +526,7 @@ mod tests {
 
     fn assert_same_as_image_crate(bytes: &[u8]) {
         let expected = image::load_from_memory(bytes).unwrap();
-        let actual = decode_image(bytes).unwrap();
+        let actual = decode_image(bytes, DEFAULT_MAX_WIDTH).unwrap();
         assert_eq!(actual.color(), expected.color());
         assert_eq!(actual.dimensions(), expected.dimensions());
         assert!(actual.as_bytes() == expected.as_bytes());
@@ -560,6 +561,30 @@ mod tests {
         assert_same_as_image_crate(&png);
     }
 
+    fn plain_jpeg(width: u32, height: u32) -> Vec<u8> {
+        let img = ImageBuffer::from_pixel(width, height, image::Rgb([40, 90, 200]));
+        encode(
+            &DynamicImage::ImageRgb8(img),
+            image::ImageOutputFormat::Jpeg(90),
+        )
+    }
+
+    /// 幅が広い JPEG は、メモリを抑えるため、判定に使う幅を下回らない範囲で縮めて展開すること
+    #[test]
+    fn test_decode_image_shrinks_wide_jpeg() {
+        let img = decode_image(&plain_jpeg(2000, 1000), 600).unwrap();
+
+        assert_eq!(img.dimensions(), (1000, 500));
+    }
+
+    /// 幅が判定に使う幅以下の JPEG は、そのままの大きさで展開すること
+    #[test]
+    fn test_decode_image_keeps_narrow_jpeg() {
+        let img = decode_image(&plain_jpeg(600, 300), 600).unwrap();
+
+        assert_eq!(img.dimensions(), (600, 300));
+    }
+
     /// 途中で切れた JPEG は読めずに失敗すること
     #[test]
     fn test_decode_image_rejects_truncated_jpeg() {
@@ -569,6 +594,6 @@ mod tests {
             image::ImageOutputFormat::Jpeg(90),
         );
 
-        assert!(decode_image(&jpeg[..20]).is_err());
+        assert!(decode_image(&jpeg[..20], DEFAULT_MAX_WIDTH).is_err());
     }
 }
