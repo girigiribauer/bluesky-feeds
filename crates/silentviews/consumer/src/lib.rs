@@ -93,9 +93,21 @@ pub fn candidate_images(post: &PostEvent) -> Option<Vec<CandidateImage>> {
 }
 
 const MAX_MARKS: usize = 3;
+const OWN_TAGS: [&str; 2] = ["silentviews", "silentview"];
 
 fn is_silent(text: &str) -> bool {
-    !text.chars().any(char::is_alphanumeric) && marks(text) <= MAX_MARKS
+    let rest = without_own_tags(text);
+    !rest.chars().any(char::is_alphanumeric) && marks(&rest) <= MAX_MARKS
+}
+
+fn without_own_tags(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|word| {
+            let tag = word.strip_prefix(['#', '＃']).map(str::to_lowercase);
+            !tag.is_some_and(|t| OWN_TAGS.contains(&t.as_str()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn marks(text: &str) -> usize {
@@ -215,6 +227,41 @@ mod tests {
         assert!(is_candidate("🌄✨🌊", json!({})));
         assert!(!is_candidate("😆😆😆😆", json!({})));
         assert!(!is_candidate("✨ 🌊 ✨ 🌄", json!({})));
+    }
+
+    /// 本文がこのフィードのタグ（#silentviews・#silentview、大文字小文字や全角の＃も可）だけなら、候補にすること
+    #[test]
+    fn test_own_tag_alone_is_candidate() {
+        for text in [
+            "#silentviews",
+            "#silentview",
+            "#SilentViews",
+            "＃silentviews",
+            "#silentviews\n#silentview",
+        ] {
+            assert!(is_candidate(text, json!({})), "text={text:?}");
+        }
+    }
+
+    /// このフィードのタグは、絵文字や記号3個までと一緒に書いてもよく、4個以上なら候補にしないこと
+    #[test]
+    fn test_own_tag_with_marks_follows_mark_limit() {
+        assert!(is_candidate("#silentviews 🌄✨🌊", json!({})));
+        assert!(!is_candidate("#silentviews 😆😆😆😆", json!({})));
+    }
+
+    /// このフィードのタグがあっても、ほかに文字や別のタグがあれば候補にしないこと
+    #[test]
+    fn test_own_tag_with_words_is_not_candidate() {
+        for text in [
+            "#silentviews きれい",
+            "#silentviews #nature",
+            "#silentviewsfan",
+            "#silentviews.",
+            "silentviews",
+        ] {
+            assert!(!is_candidate(text, json!({})), "text={text:?}");
+        }
     }
 
     /// 肌の色つき・国旗・つないだ絵文字は、見た目どおり1個と数えること
