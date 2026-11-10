@@ -45,6 +45,9 @@ pub async fn get_feed_skeleton(
 
     let feed_name = params.feed_name();
 
+    let service =
+        FeedService::from_str(feed_name).ok_or(AppError::NotFound("Feed not found".to_string()))?;
+
     let feed_path = format!("/feeds/{}?did={}", feed_name, requester_did);
 
     let event_data = serde_json::json!({
@@ -62,9 +65,6 @@ pub async fn get_feed_skeleton(
             Some(event_data),
         );
     }
-
-    let service =
-        FeedService::from_str(feed_name).ok_or(AppError::NotFound("Feed not found".to_string()))?;
 
     match service {
         FeedService::Helloworld => handle_helloworld(state, headers, params).await,

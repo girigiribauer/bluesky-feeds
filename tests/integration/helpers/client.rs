@@ -1,4 +1,5 @@
 use super::fake_bluesky_api::FakeBlueskyApi;
+use super::fake_umami::FakeUmami;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -16,17 +17,20 @@ pub struct TestClient {
     pub router: Router,
     pub state: SharedState,
     pub bluesky_api: FakeBlueskyApi,
+    pub umami: FakeUmami,
 }
 
 impl TestClient {
     pub async fn new() -> Self {
         let bluesky_api = FakeBlueskyApi::start().await;
-        let state = create_test_state(&bluesky_api.url).await;
+        let umami = FakeUmami::start().await;
+        let state = create_test_state(&bluesky_api.url, &umami.url).await;
         let router = app(state.clone());
         Self {
             router,
             state,
             bluesky_api,
+            umami,
         }
     }
 
@@ -118,7 +122,7 @@ impl TestClient {
     }
 }
 
-async fn create_test_state(bluesky_api_base: &str) -> SharedState {
+async fn create_test_state(bluesky_api_base: &str, umami_url: &str) -> SharedState {
     let db = sqlx::sqlite::SqlitePoolOptions::new()
         .connect("sqlite::memory:")
         .await
@@ -172,7 +176,7 @@ async fn create_test_state(bluesky_api_base: &str) -> SharedState {
         oneyearago_db: db.clone(),
         silentviews_db: db,
         umami: Some(bluesky_feeds::analytics::UmamiClient::new(
-            "http://localhost:3000".to_string(),
+            umami_url.to_string(),
             "dummy_website_id".to_string(),
             Some("localhost".to_string()),
         )),
