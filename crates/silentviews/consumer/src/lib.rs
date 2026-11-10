@@ -2,6 +2,7 @@ pub mod app;
 pub mod cv;
 pub mod pipeline;
 pub mod reason;
+pub mod stats;
 pub mod tools;
 
 use anyhow::{Context, Result};

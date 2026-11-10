@@ -1,16 +1,19 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Mutex};
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use jetstream::{App, PostDelete, PostEvent};
 use sqlx::SqlitePool;
 
 use crate::pipeline::{self, Models};
 use crate::reason::Reason;
+use crate::stats::{failure_kind, memory_and_reset_peak, Outcome, Stats};
 use crate::{candidate_images, CandidateImage};
 
 const WORKERS: usize = 4;
+const SUMMARY_INTERVAL: Duration = Duration::from_secs(3600);
 
 type Job = (
     Vec<Vec<u8>>,
@@ -23,6 +26,8 @@ pub struct SilentViews {
     http: reqwest::Client,
     cdn_base: Option<String>,
     stored: Mutex<HashSet<String>>,
+    stats: Mutex<Stats>,
+    busy_nanos: Arc<AtomicU64>,
 }
 
 impl SilentViews {
@@ -31,14 +36,17 @@ impl SilentViews {
         models_dir: &Path,
         cdn_base: Option<String>,
     ) -> anyhow::Result<Self> {
+        let busy_nanos = Arc::new(AtomicU64::new(0));
         Ok(Self {
             pool,
-            jobs: start_judge_thread(models_dir.to_path_buf())?,
+            jobs: start_judge_thread(models_dir.to_path_buf(), busy_nanos.clone())?,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .build()?,
             cdn_base,
             stored: Mutex::new(HashSet::new()),
+            stats: Mutex::new(Stats::new(SUMMARY_INTERVAL, Instant::now())),
+            busy_nanos,
         })
     }
 
@@ -68,6 +76,15 @@ impl SilentViews {
         Ok(result.await?)
     }
 
+    fn summarize(&self, outcome: Outcome) {
+        let busy = Duration::from_nanos(self.busy_nanos.load(Ordering::Relaxed));
+        let mut stats = self.stats.lock().unwrap();
+        stats.record(outcome);
+        if let Some(line) = stats.report(Instant::now(), busy) {
+            tracing::info!("{line} {}", memory_and_reset_peak());
+        }
+    }
+
     async fn fetch_all(&self, urls: impl Iterator<Item = String>) -> anyhow::Result<Vec<Vec<u8>>> {
         let mut out = Vec::new();
         for url in urls {
@@ -85,7 +102,10 @@ impl SilentViews {
     }
 }
 
-fn start_judge_thread(models_dir: PathBuf) -> anyhow::Result<mpsc::Sender<Job>> {
+fn start_judge_thread(
+    models_dir: PathBuf,
+    busy_nanos: Arc<AtomicU64>,
+) -> anyhow::Result<mpsc::Sender<Job>> {
     let (jobs, inbox) = mpsc::channel::<Job>();
     let (ready, loaded) = mpsc::channel();
     std::thread::Builder::new()
@@ -102,7 +122,10 @@ fn start_judge_thread(models_dir: PathBuf) -> anyhow::Result<mpsc::Sender<Job>> 
                 }
             };
             for (larges, reply) in inbox {
-                let _ = reply.send(pipeline::judge_images(&models, &larges));
+                let started = Instant::now();
+                let result = pipeline::judge_images(&models, &larges);
+                busy_nanos.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                let _ = reply.send(result);
             }
         })?;
     loaded.recv()??;
@@ -159,8 +182,14 @@ impl App for SilentViews {
         let Some(images) = candidate_images(post) else {
             return;
         };
-        let started = std::time::Instant::now();
-        match self.judge(&images).await {
+        let started = Instant::now();
+        let judged = self.judge(&images).await;
+        self.summarize(match &judged {
+            Ok(Ok(())) => Outcome::Pass,
+            Ok(Err(reason)) => Outcome::Reject(*reason),
+            Err(e) => Outcome::Failed(failure_kind(e)),
+        });
+        match judged {
             Ok(Ok(())) => match store(&self.pool, post).await {
                 Ok(()) => {
                     self.stored.lock().unwrap().insert(post.uri());
