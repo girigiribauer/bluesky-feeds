@@ -102,36 +102,39 @@ impl TextDetector {
     }
 
     pub fn detect(&mut self, bgr: &Image) -> anyhow::Result<Ocr> {
-        let (h, w) = (bgr.h, bgr.w);
-        let (mut n, mut area, mut lines, mut edge) = (0u32, 0f64, 0u32, 0u32);
-        for b in self.polygons(bgr)? {
-            let pts: Vec<(f32, f32)> = b.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
-            let rect: RotRect = shape::min_area_rect_f(&pts);
-            let (rw, rh) = (rect.w as f64, rect.h as f64);
-            if rw.min(rh) < 3.0 {
-                continue;
-            }
-            n += 1;
-            area += rw * rh;
-            let top = b.iter().map(|p| p.1).min().unwrap_or(0);
-            let bottom = b.iter().map(|p| p.1).max().unwrap_or(0);
-            if in_edge_band(top, bottom, h) {
-                edge += 1;
-            }
-            let (long, short) = (rw.max(rh), rw.min(rh));
-            let ang = rect.angle as f64;
-            let tilt = if rw >= rh { ang } else { ang - 90.0 };
-            let tilt = ((tilt + 90.0).rem_euclid(180.0) - 90.0).abs();
-            if long >= 2.5 * short && tilt <= 15.0 {
-                lines += 1;
-            }
+        Ok(summarize(&self.polygons(bgr)?, bgr.w, bgr.h))
+    }
+}
+
+pub fn summarize(boxes: &[Vec<Pt>], w: usize, h: usize) -> Ocr {
+    let (mut n, mut area, mut lines, mut edge) = (0u32, 0f64, 0u32, 0u32);
+    for b in boxes {
+        let pts: Vec<(f32, f32)> = b.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
+        let rect: RotRect = shape::min_area_rect_f(&pts);
+        let (rw, rh) = (rect.w as f64, rect.h as f64);
+        if rw.min(rh) < 3.0 {
+            continue;
         }
-        Ok(Ocr {
-            ocr_n: n,
-            ocr_area: area / (w * h) as f64,
-            ocr_lines: lines,
-            ocr_edge: edge,
-        })
+        n += 1;
+        area += rw * rh;
+        let top = b.iter().map(|p| p.1).min().unwrap_or(0);
+        let bottom = b.iter().map(|p| p.1).max().unwrap_or(0);
+        if in_edge_band(top, bottom, h) {
+            edge += 1;
+        }
+        let (long, short) = (rw.max(rh), rw.min(rh));
+        let ang = rect.angle as f64;
+        let tilt = if rw >= rh { ang } else { ang - 90.0 };
+        let tilt = ((tilt + 90.0).rem_euclid(180.0) - 90.0).abs();
+        if long >= 2.5 * short && tilt <= 15.0 {
+            lines += 1;
+        }
+    }
+    Ocr {
+        ocr_n: n,
+        ocr_area: area / (w * h) as f64,
+        ocr_lines: lines,
+        ocr_edge: edge,
     }
 }
 

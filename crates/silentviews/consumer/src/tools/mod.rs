@@ -7,6 +7,7 @@ pub mod nearness;
 pub mod object_detector;
 pub mod scene_zones;
 pub mod text_detector;
+pub mod text_reader;
 pub mod text_texture;
 pub mod thumb_colors;
 

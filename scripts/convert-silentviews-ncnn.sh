@@ -46,7 +46,8 @@ convert() {
   shape=$2
   param_sha=$3
   bin_sha=$4
-  (cd "$work" && "./$pnnx/pnnx" "$stem.onnx" "inputshape=$shape" fp16=0 > "$stem.log" 2>&1)
+  shape2=${5:-}
+  (cd "$work" && "./$pnnx/pnnx" "$stem.onnx" "inputshape=$shape" ${shape2:+"inputshape2=$shape2"} fp16=0 > "$stem.log" 2>&1)
   for ext in param bin; do
     expected=$param_sha
     [ "$ext" = bin ] && expected=$bin_sha
@@ -79,6 +80,9 @@ case "$target" in
     fetch "$work/object_detection_nanodet_2022nov.onnx" \
       "$zoo/object_detection_nanodet/resolve/5bfd47077350a726ad440dd7bd1e1e35e8ebcfb2/object_detection_nanodet_2022nov.onnx" \
       4b82da9944b88577175ee23a459dce2e26e6e4be573def65b1055dc2d9720186
+    fetch "$work/text_recognition_ppocrv4.onnx" \
+      "https://huggingface.co/SWHL/RapidOCR/resolve/1cfba2e90fc938db55889873735088de210cc173/PP-OCRv4/ch_PP-OCRv4_rec_infer.onnx" \
+      48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b
     fetch "$work/u2netp.onnx" \
       "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx" \
       309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
@@ -88,6 +92,10 @@ case "$target" in
     convert object_detection_nanodet_2022nov '[1,3,416,416]' \
       554ea94e635bee53e09216d842b536cba52c7cf8ab59e5f3bd5ef7d011191f47 \
       8f0f1d5cebb8721ac3544dd9edd29e8f2c21dd4df17bfb993772b1d54674e6a8
+    convert text_recognition_ppocrv4 '[1,3,48,320]' \
+      2ae30dfdc7ee482c6cbbc0419c16ee125e880e9eaf69053d61953694bb0fcf4c \
+      f91ebdcf4d6b58c58a87704160e59d07ae56bc2d5021eae09d095c5a20bf7525 \
+      '[1,3,48,640]'
     convert u2netp '[1,3,320,320]' \
       faf6e6aa63b8934e7077f4100deeac5f590f64931da03b0000133e5895d1dc42 \
       7e18d54080bc4560dff8f9b39f4a5b0392f6a104cf4d59b4c5d86bd24402c908

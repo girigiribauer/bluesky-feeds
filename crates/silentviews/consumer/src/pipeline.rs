@@ -6,6 +6,7 @@ use crate::tools::clip_words::{self, ClipScorer};
 use crate::tools::foreground_objects::{self, ForegroundDetector};
 use crate::tools::object_detector::{self, ObjectDetector};
 use crate::tools::text_detector::{self, TextDetector};
+use crate::tools::text_reader::TextReader;
 use crate::tools::thumb_colors;
 use crate::tools::{edge_amount, flat_areas, mirror_symmetry, nearness, scene_zones, text_texture};
 use vision::img::{self, Image};
@@ -22,6 +23,7 @@ impl Models {
         );
         drop(ObjectDetector::load(models_dir)?);
         drop(TextDetector::load(models_dir)?);
+        drop(TextReader::load(models_dir)?);
         drop(ClipScorer::load(models_dir)?);
         drop(ForegroundDetector::load(models_dir)?);
         release_memory();
@@ -112,8 +114,17 @@ fn judge_basic(models: &Path, bgr: &Image, gray: &Image) -> Result<(), Reason> {
     check(object_detector::judge(&objects))?;
     let clip = measured(use_model(ClipScorer::load(models), |m| m.score(bgr)))?;
     check(clip_words::judge(&clip))?;
-    let ocr = measured(use_model(TextDetector::load(models), |m| m.detect(bgr)))?;
-    check(text_detector::judge(&ocr))?;
+    let boxes = measured(use_model(TextDetector::load(models), |m| m.polygons(bgr)))?;
+    let boxes = if boxes.is_empty() {
+        boxes
+    } else {
+        measured(use_model(TextReader::load(models), |m| {
+            m.text_like(bgr, gray, boxes)
+        }))?
+    };
+    check(text_detector::judge(&text_detector::summarize(
+        &boxes, bgr.w, bgr.h,
+    )))?;
     let near = measured(nearness::measure(bgr, gray))?;
     check(nearness::judge(&near, zones.sky))
 }

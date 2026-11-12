@@ -75,6 +75,7 @@ Silent Views フィードの consumer は、次の学習済みモデルと部品
 | --- | --- | --- |
 | [TinyCLIP](https://github.com/wkcn/TinyCLIP) (ViT-8M-16-Text-3M-YFCC15M) | 画像と言葉の照らし合わせ | MIT |
 | [PP-OCRv3](https://github.com/opencv/opencv_zoo/tree/main/models/text_detection_ppocr)（opencv_zoo） | 文字探し | Apache-2.0 |
+| [PP-OCRv4](https://github.com/PaddlePaddle/PaddleOCR) 文字認識（[RapidOCR](https://github.com/RapidAI/RapidOCR) の ONNX 書き出し） | 見つけた文字を読む | Apache-2.0 |
 | [NanoDet](https://github.com/opencv/opencv_zoo/tree/main/models/object_detection_nanodet)（opencv_zoo） | 物探し | Apache-2.0 |
 | [U-2-Net](https://github.com/xuebinqin/U-2-Net) u2netp（[rembg](https://github.com/danielgatis/rembg) の ONNX 書き出し） | 目立つ物の切り出し | Apache-2.0（ONNX 書き出しは MIT） |
 | [ncnn](https://github.com/Tencent/ncnn) | モデルの実行 | BSD-3-Clause |

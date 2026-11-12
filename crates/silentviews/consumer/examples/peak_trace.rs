@@ -37,6 +37,7 @@ fn main() -> anyhow::Result<()> {
                 .len()
         })
         .collect();
+    let _ = std::fs::write("/proc/self/clear_refs", "5");
     let mut last = hwm();
     let mut gaps = Vec::new();
     for n in std::fs::read_to_string(format!("{work}/{allow}"))?.split_whitespace() {
