@@ -105,7 +105,7 @@ const AVAILABLE_FEED_SERVICES: &[FeedServiceConfig] = &[
     FeedServiceConfig {
         service: "silentviews",
         display_name: "Silent Views",
-        description: "A quiet feed where only beautiful photos flow by, with no one saying a word.\n\n誰も喋ってない、綺麗な写真だけが流れていく、静かなフィードです\n\n#silentviews #silentview",
+        description: "誰も喋ってない、綺麗な写真だけが流れていく、静かなフィードです\n人、文字、イラスト、近すぎるものなど、複数の軽量なフィルターで弾いた結果、なぜか綺麗な景色ばかりが残る不思議な空間になりました\n\nBeautiful photos drift by. No one says a word.\nSimple filters weed out people, text, illustrations, close-ups... and somehow, only beautiful scenery remains.\n\n#silentviews #silentview",
         avatar: Some("assets/bluesky-feed-silentviews.png"),
     },
 ];
