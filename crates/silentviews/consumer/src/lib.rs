@@ -1,4 +1,5 @@
 pub mod app;
+pub mod blacklist;
 pub mod cv;
 pub mod pipeline;
 pub mod reason;
@@ -34,6 +35,20 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await
     .context("Failed to create silentviews index")?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS silentviews_users (
+            did TEXT PRIMARY KEY,
+            flags INTEGER NOT NULL DEFAULT 0,
+            blacklisted_at INTEGER,
+            source TEXT
+        );
+        "#,
+    )
+    .execute(pool)
+    .await
+    .context("Failed to create silentviews_users table")?;
 
     Ok(())
 }

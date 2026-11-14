@@ -26,6 +26,7 @@ pub struct SilentViews {
     http: reqwest::Client,
     cdn_base: Option<String>,
     stored: Mutex<HashSet<String>>,
+    blacklist: Mutex<HashSet<String>>,
     stats: Mutex<Stats>,
     busy_nanos: Arc<AtomicU64>,
 }
@@ -45,6 +46,7 @@ impl SilentViews {
                 .build()?,
             cdn_base,
             stored: Mutex::new(HashSet::new()),
+            blacklist: Mutex::new(HashSet::new()),
             stats: Mutex::new(Stats::new(SUMMARY_INTERVAL, Instant::now())),
             busy_nanos,
         })
@@ -165,6 +167,13 @@ impl App for SilentViews {
 
     async fn migrate(&self) -> anyhow::Result<()> {
         crate::migrate(&self.pool).await?;
+        let now_us = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_micros() as i64;
+        let blacklist =
+            crate::blacklist::sync_manual(&self.pool, crate::blacklist::MANUAL, now_us).await?;
+        tracing::info!("blacklist: {} users", blacklist.len());
+        *self.blacklist.lock().unwrap() = blacklist;
         let uris = stored_uris(&self.pool).await?;
         *self.stored.lock().unwrap() = uris;
         Ok(())
@@ -175,7 +184,7 @@ impl App for SilentViews {
     }
 
     fn sieve(&self, post: &PostEvent) -> bool {
-        candidate_images(post).is_some()
+        !self.blacklist.lock().unwrap().contains(&post.did) && candidate_images(post).is_some()
     }
 
     async fn process(&self, post: &PostEvent) {
@@ -315,6 +324,42 @@ mod tests {
         let app = SilentViews::new(pool, crate::cv::testing::models(), None).unwrap();
 
         assert_eq!(app.workers(), 4);
+    }
+
+    fn image_post(did: &str) -> PostEvent {
+        let json = json!({
+            "did": did,
+            "time_us": 1_700_000_000_000_000i64,
+            "kind": "commit",
+            "commit": {
+                "operation": "create", "rev": "3l3temxelsm2a", "rkey": "3l3temxelsm2a",
+                "collection": "app.bsky.feed.post",
+                "cid": "bafyreibvjvcv745gig4mvqs4hctx4zfkono4rjejm2ta6gtyzkqxfjeily",
+                "record": {
+                    "$type": "app.bsky.feed.post", "text": "", "createdAt": "2023-11-14T22:13:19.000Z",
+                    "embed": { "$type": "app.bsky.embed.images", "images": [{
+                        "alt": "",
+                        "image": { "$type": "blob", "ref": { "$link": "bafkreib7o2gowpvz2qh6ytvgdpkvcbfzowvvrqvgl3cztrmjvhmtxyfwfa" }, "mimeType": "image/jpeg", "size": 1000 },
+                    }] },
+                },
+            },
+        })
+        .to_string();
+        match jetstream::event::parse_event(&json, &mut Default::default()) {
+            Ok(Some(jetstream::Event::Post(p))) => *p,
+            _ => panic!("投稿として読めなかった"),
+        }
+    }
+
+    /// 起動時に手で入れる一覧を読み込み、その人の投稿は画像を取りに行く前のふるいで落とし、ほかの人の同じ形の投稿は通すこと
+    #[tokio::test]
+    async fn test_blacklisted_user_is_dropped_at_sieve() {
+        let pool = single_pool().await;
+        let app = SilentViews::new(pool, crate::cv::testing::models(), None).unwrap();
+        app.migrate().await.unwrap();
+
+        assert!(!app.sieve(&image_post(crate::blacklist::MANUAL[0])));
+        assert!(app.sieve(&image_post("did:plc:z72i7hdynmk6r22z27h6tvur")));
     }
 
     fn delete_of(uri: &str) -> PostDelete {
