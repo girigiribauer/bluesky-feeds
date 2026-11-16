@@ -5,6 +5,7 @@ pub mod foreground_objects;
 pub mod mirror_symmetry;
 pub mod nearness;
 pub mod object_detector;
+pub mod painting;
 pub mod scene_zones;
 pub mod text_detector;
 pub mod text_reader;

@@ -8,7 +8,9 @@ use crate::tools::object_detector::{self, ObjectDetector};
 use crate::tools::text_detector::{self, TextDetector};
 use crate::tools::text_reader::TextReader;
 use crate::tools::thumb_colors;
-use crate::tools::{edge_amount, flat_areas, mirror_symmetry, nearness, scene_zones, text_texture};
+use crate::tools::{
+    edge_amount, flat_areas, mirror_symmetry, nearness, painting, scene_zones, text_texture,
+};
 use vision::img::{self, Image};
 
 pub struct Models {
@@ -114,6 +116,7 @@ fn judge_basic(models: &Path, bgr: &Image, gray: &Image) -> Result<(), Reason> {
     check(object_detector::judge(&objects))?;
     let clip = measured(use_model(ClipScorer::load(models), |m| m.score(bgr)))?;
     check(clip_words::judge(&clip))?;
+    check(painting::judge(clip.paint_p, || painting::grain(bgr)))?;
     let boxes = measured(use_model(TextDetector::load(models), |m| m.polygons(bgr)))?;
     let boxes = if boxes.is_empty() {
         boxes

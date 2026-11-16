@@ -31,6 +31,7 @@ mod tests {
             close_p: 0.5,
             manmade_p: 0.0,
             window_p: 0.0,
+            paint_p: 0.0,
         }
     }
 
@@ -86,6 +87,7 @@ mod tests {
             close_p: 0.999,
             manmade_p: 0.9,
             window_p: 0.9,
+            paint_p: 0.0,
         };
         assert_eq!(judge(&all), Some(Reason::ManmadeScene));
         assert_eq!(

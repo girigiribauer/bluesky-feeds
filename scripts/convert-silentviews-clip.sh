@@ -42,6 +42,10 @@ SCENE_MANMADE = ["a photo of a city", "a photo of a building", "a photo of a str
                  "a photo of a backyard", "a photo of a car", "a photo of a boat", "a photo of a bridge",
                  "a photo of power lines", "a photo of a tent", "a photo of a village", "a painting",
                  "a digital illustration", "a fantasy artwork", "a drawing", "an AI generated image"]
+PAINT_PHOTO = ["a photo", "a photograph of a landscape", "a smartphone photo", "a photo of nature", "a photo of the sky",
+               "a photo of a city", "a satellite image", "an aerial photo", "a drone photo"]
+PAINT_ART = ["a painting", "an oil painting", "a watercolor painting", "an acrylic painting", "an impressionist painting",
+             "a drawing", "a sketch"]
 
 src, out = sys.argv[1], sys.argv[2]
 m = CLIPModel.from_pretrained(src).eval()
@@ -60,9 +64,10 @@ c = embed(SCENE_NATURE + SCENE_MANMADE)
 d = embed(WINDOW)
 e = embed(TILE_TOON)
 f = embed(TILE_PERSON)
+g = embed(PAINT_PHOTO + PAINT_ART)
 json.dump({"photo": a[:len(PHOTO)], "far": b[:len(FAR)], "near": b[len(FAR):],
            "scene_nature": c[:len(SCENE_NATURE)], "scene_manmade": c[len(SCENE_NATURE):], "window": d, "tile_toon": e,
-           "tile_person": f},
+           "tile_person": f, "paint_photo": g[:len(PAINT_PHOTO)], "paint_art": g[len(PAINT_PHOTO):]},
           open(f"{out}/clip_text_embeds.json", "w"))
 size = m.config.vision_config.image_size
 json.dump({"image_size": size, "mean": pre["image_mean"], "std": pre["image_std"], "logit_scale": float(m.logit_scale.exp())},

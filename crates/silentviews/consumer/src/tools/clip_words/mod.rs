@@ -12,6 +12,7 @@ pub struct Clip {
     pub close_p: f64,
     pub manmade_p: f64,
     pub window_p: f64,
+    pub paint_p: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +31,8 @@ struct TextEmbeds {
     window: Vec<Vec<f32>>,
     tile_toon: Vec<Vec<f32>>,
     tile_person: Vec<Vec<f32>>,
+    paint_photo: Vec<Vec<f32>>,
+    paint_art: Vec<Vec<f32>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -70,6 +73,12 @@ impl ClipScorer {
                 &e,
                 &self.text.photo,
                 &self.text.window,
+                self.meta.logit_scale,
+            ),
+            paint_p: share(
+                &e,
+                &self.text.paint_photo,
+                &self.text.paint_art,
                 self.meta.logit_scale,
             ),
         })

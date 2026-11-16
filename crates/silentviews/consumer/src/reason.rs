@@ -17,6 +17,7 @@ pub enum Reason {
     ManmadeScene,
     GardenOrLookingDown,
     ThroughWindow,
+    Painting,
     TextOcr,
     EdgeText,
     TooClose,
